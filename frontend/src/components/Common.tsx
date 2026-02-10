@@ -38,11 +38,11 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, subtitle, tren
     const getTrendColor = () => {
         switch (trend) {
             case 'up':
-                return 'text-success-600';
+                return 'text-emerald-300';
             case 'down':
-                return 'text-danger-600';
+                return 'text-rose-300';
             default:
-                return 'text-gray-600';
+                return 'text-slate-400';
         }
     };
 
@@ -50,14 +50,14 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, subtitle, tren
         <div className="card animate-fade-in">
             <div className="flex items-start justify-between">
                 <div>
-                    <p className="text-sm font-medium text-gray-600">{title}</p>
-                    <p className="mt-2 text-3xl font-bold text-gray-900">{value}</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{title}</p>
+                    <p className="mt-2 text-3xl font-semibold text-slate-100">{value}</p>
                     {subtitle && (
                         <p className={`mt-1 text-sm ${getTrendColor()}`}>{subtitle}</p>
                     )}
                 </div>
                 {icon && (
-                    <div className="rounded-full bg-primary-100 p-3 text-primary-600">
+                    <div className="rounded-full bg-cyan-500/10 p-3 text-cyan-300">
                         {icon}
                     </div>
                 )}
@@ -79,7 +79,7 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 'md' }) =
 
     return (
         <div className="flex items-center justify-center p-4">
-            <div className={`${sizeClasses[size]} animate-spin rounded-full border-4 border-gray-200 border-t-primary-600`} />
+            <div className={`${sizeClasses[size]} animate-spin rounded-full border-4 border-slate-800 border-t-cyan-400`} />
         </div>
     );
 };
@@ -98,15 +98,15 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ current, total, label 
         <div className="w-full">
             {label && (
                 <div className="mb-2 flex justify-between text-sm">
-                    <span className="font-medium text-gray-700">{label}</span>
-                    <span className="text-gray-600">
+                    <span className="font-medium text-slate-300">{label}</span>
+                    <span className="text-slate-400">
                         {current.toLocaleString()} / {total.toLocaleString()}
                     </span>
                 </div>
             )}
-            <div className="h-3 w-full overflow-hidden rounded-full bg-gray-200">
+            <div className="h-3 w-full overflow-hidden rounded-full bg-slate-800/80">
                 <div
-                    className={`h-full transition-all duration-500 ${isComplete ? 'bg-success-500' : 'bg-primary-600'
+                    className={`h-full transition-all duration-500 ${isComplete ? 'bg-emerald-400' : 'bg-cyan-400'
                         }`}
                     style={{ width: `${percentage}%` }}
                 />
@@ -129,14 +129,14 @@ export const SignificanceIndicator: React.FC<SignificanceIndicatorProps> = ({
     return (
         <div className="flex items-center gap-2">
             <div
-                className={`h-3 w-3 rounded-full ${isSignificant ? 'bg-success-500' : 'bg-gray-400'
+                className={`h-3 w-3 rounded-full ${isSignificant ? 'bg-emerald-400' : 'bg-slate-500'
                     }`}
             />
-            <span className={`text-sm font-medium ${isSignificant ? 'text-success-700' : 'text-gray-600'
+            <span className={`text-sm font-medium ${isSignificant ? 'text-emerald-300' : 'text-slate-400'
                 }`}>
                 {isSignificant ? 'Significant' : 'Not Significant'}
             </span>
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-slate-500">
                 (p = {pValue !== null && pValue !== undefined && !isNaN(pValue) ? pValue.toFixed(4) : '—'})
             </span>
         </div>

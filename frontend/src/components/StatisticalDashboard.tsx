@@ -54,16 +54,16 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                 <div className="flex items-center justify-between mb-2">
                     <h2 className="mb-0">{experiment.name}</h2>
                     {isPolling && (
-                        <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 rounded-full border border-green-100">
+                        <div className="flex items-center space-x-2 px-3 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10">
                             <span className="relative flex h-3 w-3">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
                             </span>
-                            <span className="text-xs font-semibold text-green-700 uppercase tracking-wider">Live</span>
+                            <span className="text-xs font-semibold text-emerald-200 uppercase tracking-[0.3em]">Live</span>
                         </div>
                     )}
                 </div>
-                <p className="text-gray-600">{experiment.description}</p>
+                <p className="text-slate-400">{experiment.description}</p>
             </div>
 
             {/* Key Metrics Grid */}
@@ -89,9 +89,9 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                 <h3 className="mb-4">Statistical Analysis</h3>
                 <div className="space-y-6">
                     {results.map((result, idx) => (
-                        <div key={idx} className="border-b border-gray-200 pb-6 last:border-0">
+                        <div key={idx} className="border-b border-slate-800/70 pb-6 last:border-0">
                             <div className="mb-3 flex items-center justify-between">
-                                <h4 className="text-lg font-semibold text-gray-800">
+                                <h4 className="text-lg font-semibold text-slate-100">
                                     {result.variant_b} vs {result.variant_a}
                                 </h4>
                                 <SignificanceIndicator pValue={result.p_value} />
@@ -99,21 +99,21 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
 
                             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
                                 <div>
-                                    <p className="text-sm text-gray-600">Effect Size</p>
-                                    <p className="text-xl font-bold text-gray-900">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Effect Size</p>
+                                    <p className="text-xl font-semibold text-slate-100">
                                         {result.effect_size > 0 ? '+' : ''}
                                         {formatPercent(result.effect_size)}
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-sm text-gray-600">P-Value</p>
-                                    <p className="text-xl font-bold text-gray-900">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">P-Value</p>
+                                    <p className="text-xl font-semibold text-slate-100">
                                         {formatNumber(result.p_value, 4)}
                                     </p>
                                 </div>
                                 <div className="col-span-2">
-                                    <p className="text-sm text-gray-600">95% Confidence Interval</p>
-                                    <p className="text-xl font-bold text-gray-900">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">95% Confidence Interval</p>
+                                    <p className="text-xl font-semibold text-slate-100">
                                         [{formatPercent(result.confidence_interval_lower)},{' '}
                                         {formatPercent(result.confidence_interval_upper)}]
                                     </p>
@@ -121,7 +121,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                             </div>
 
                             <div className="mt-3">
-                                <p className="text-xs text-gray-500">Test: {result.test_type}</p>
+                                <p className="text-xs text-slate-500">Test: {result.test_type}</p>
                             </div>
                         </div>
                     ))}
@@ -133,19 +133,20 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                 <h3 className="mb-4">Variant Performance Comparison</h3>
                 <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={variantComparison}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis dataKey="name" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
+                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                borderRadius: '12px',
+                                color: '#e2e8f0',
                             }}
                         />
-                        <Legend />
-                        <Bar dataKey="control" fill="#94a3b8" name="Control" />
-                        <Bar dataKey="treatment" fill="#0ea5e9" name="Treatment" />
+                        <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                        <Bar dataKey="control" fill="#64748b" name="Control" />
+                        <Bar dataKey="treatment" fill="#38bdf8" name="Treatment" />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
@@ -155,18 +156,19 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                 <h3 className="mb-4">Effect Size with Confidence Intervals</h3>
                 <ResponsiveContainer width="100%" height={300}>
                     <LineChart data={variantComparison}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" />
-                        <YAxis />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis dataKey="name" stroke="#94a3b8" />
+                        <YAxis stroke="#94a3b8" />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                                border: '1px solid #e5e7eb',
-                                borderRadius: '8px',
+                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                borderRadius: '12px',
+                                color: '#e2e8f0',
                             }}
                         />
-                        <Legend />
-                        <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                        <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                        <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />
                         <Line
                             type="monotone"
                             dataKey="ciLower"
@@ -178,7 +180,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                         <Line
                             type="monotone"
                             dataKey="effectSize"
-                            stroke="#0ea5e9"
+                            stroke="#38bdf8"
                             strokeWidth={2}
                             name="Effect Size"
                         />
@@ -210,21 +212,21 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
             </div>
 
             {/* Event Ingestion (Debug/Test) */}
-            <div className="card border-dashed border-2 border-gray-200 bg-gray-50/50">
-                <h3 className="mb-4 text-gray-700">Test Event Ingestion</h3>
+            <div className="card border-dashed border-2 border-slate-800/70 bg-slate-950/60">
+                <h3 className="mb-4 text-slate-200">Test Event Ingestion</h3>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                     <div>
-                        <label className="label text-xs uppercase text-gray-500">User ID</label>
+                        <label className="label">User ID</label>
                         <input
                             type="text"
-                            className="input bg-white"
+                            className="input"
                             id="test-user-id"
                             placeholder="e.g. user123"
                         />
                     </div>
                     <div>
-                        <label className="label text-xs uppercase text-gray-500">Variant</label>
-                        <select className="input bg-white" id="test-variant">
+                        <label className="label">Variant</label>
+                        <select className="input" id="test-variant">
                             {experiment.variants.map((v: any) => (
                                 <option key={v.name} value={v.name}>
                                     {v.name}
@@ -233,10 +235,10 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                         </select>
                     </div>
                     <div>
-                        <label className="label text-xs uppercase text-gray-500">Value</label>
+                        <label className="label">Value</label>
                         <input
                             type="number"
-                            className="input bg-white"
+                            className="input"
                             id="test-value"
                             defaultValue="1.0"
                             step="0.1"
@@ -271,40 +273,40 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                         Send Event
                     </button>
                 </div>
-                <p className="mt-4 text-xs text-gray-500">
+                <p className="mt-4 text-xs text-slate-500">
                     💡 This form is for manual testing. In production, events would be sent via the Ingestion SDK.
                 </p>
             </div>
 
             {/* Hypothesis Summary */}
             {experiment.hypothesis && (
-                <div className="card bg-gradient-to-r from-primary-50 to-blue-50">
+                <div className="card">
                     <h3 className="mb-3">Hypothesis</h3>
                     <div className="space-y-2">
                         <div>
-                            <p className="text-sm font-medium text-gray-700">Null Hypothesis (H₀)</p>
-                            <p className="text-gray-900">{experiment.hypothesis.null_hypothesis}</p>
+                            <p className="text-sm font-medium text-slate-300">Null Hypothesis (H₀)</p>
+                            <p className="text-slate-100">{experiment.hypothesis.null_hypothesis}</p>
                         </div>
                         <div>
-                            <p className="text-sm font-medium text-gray-700">Alternative Hypothesis (H₁)</p>
-                            <p className="text-gray-900">{experiment.hypothesis.alternative_hypothesis}</p>
+                            <p className="text-sm font-medium text-slate-300">Alternative Hypothesis (H₁)</p>
+                            <p className="text-slate-100">{experiment.hypothesis.alternative_hypothesis}</p>
                         </div>
                         <div className="grid grid-cols-3 gap-4 pt-2">
                             <div>
-                                <p className="text-sm text-gray-600">Expected Effect</p>
-                                <p className="font-semibold text-gray-900">
+                                <p className="text-sm text-slate-400">Expected Effect</p>
+                                <p className="font-semibold text-slate-100">
                                     {formatPercent(experiment.hypothesis.expected_effect_size, 1)}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-sm text-gray-600">Significance Level (α)</p>
-                                <p className="font-semibold text-gray-900">
+                                <p className="text-sm text-slate-400">Significance Level (α)</p>
+                                <p className="font-semibold text-slate-100">
                                     {formatNumber(experiment.hypothesis.significance_level, 2)}
                                 </p>
                             </div>
                             <div>
-                                <p className="text-sm text-gray-600">Power (1-β)</p>
-                                <p className="font-semibold text-gray-900">
+                                <p className="text-sm text-slate-400">Power (1-β)</p>
+                                <p className="font-semibold text-slate-100">
                                     {formatNumber(experiment.hypothesis.power, 2)}
                                 </p>
                             </div>
