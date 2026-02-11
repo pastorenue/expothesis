@@ -1457,7 +1457,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 </p>
                             ) : (
                                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    {connectedGroups.map((group, groupIdx) => (
+                                    {connectedGroups.map((group) => (
                                         <div key={group.id} className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3">
                                             <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                                                 {group.name}
@@ -1572,7 +1572,13 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                         </div>
                         <button
                             className="btn-primary w-full"
-                            onClick={isSimulating ? stopSimulation : startSimulation}
+                            onClick={() => {
+                                if (isSimulating) {
+                                    stopSimulation();
+                                } else {
+                                    void startSimulation();
+                                }
+                            }}
                             disabled={!selectedExperiment || !isFlowReady}
                         >
                             {isSimulating ? 'Stop Simulation' : 'Run Simulation'}
