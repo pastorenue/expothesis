@@ -87,12 +87,20 @@ impl UserGroupService {
         experiment_id: Uuid,
         group_id: Uuid,
         variants: &[Variant],
-        _attributes: Option<serde_json::Value>,
+        sampling_method: SamplingMethod,
+        sampling_seed: u64,
+        attributes: Option<serde_json::Value>,
     ) -> Result<UserAssignment> {
         info!("Assigning user {} to experiment {}", user_id, experiment_id);
 
-        // Use consistent hashing to assign user to variant
-        let variant_name = self.hash_user_to_variant(user_id, experiment_id, variants);
+        let variant_name = self.select_variant(
+            user_id,
+            experiment_id,
+            variants,
+            sampling_method,
+            sampling_seed,
+            attributes,
+        );
 
         let assignment = UserAssignment {
             user_id: user_id.to_string(),
@@ -137,6 +145,8 @@ impl UserGroupService {
             experiment_id,
             group_id,
             &experiment.variants,
+            experiment.sampling_method,
+            experiment.sampling_seed,
             attributes,
         )
         .await
@@ -167,6 +177,17 @@ impl UserGroupService {
             name: row.name,
             description: row.description,
             status,
+            experiment_type: ExperimentType::AbTest,
+            sampling_method: sampling_method_from_row(&row.sampling_method),
+            analysis_engine: AnalysisEngine::Frequentist,
+            sampling_seed: row.sampling_seed,
+            feature_flag_id: row
+                .feature_flag_id
+                .and_then(|id| Uuid::parse_str(&id).ok()),
+            feature_gate_id: row
+                .feature_gate_id
+                .and_then(|id| Uuid::parse_str(&id).ok()),
+            health_checks: vec![],
             hypothesis: None, // Not needed here
             variants,
             user_groups,
@@ -197,8 +218,17 @@ impl UserGroupService {
 
         // Reassign all users
         for user_id in user_ids {
-            self.assign_user_to_variant(&user_id, to_experiment_id, group_id, &to_variants, None)
-                .await?;
+            let experiment = self.get_experiment_variants_full(to_experiment_id).await?;
+            self.assign_user_to_variant(
+                &user_id,
+                to_experiment_id,
+                group_id,
+                &to_variants,
+                experiment.sampling_method,
+                experiment.sampling_seed,
+                None,
+            )
+            .await?;
         }
 
         Ok(())
@@ -240,6 +270,63 @@ impl UserGroupService {
 
         // Fallback to first variant
         variants[0].name.clone()
+    }
+
+    fn hash_user_to_variant_with_salt(
+        &self,
+        user_id: &str,
+        experiment_id: Uuid,
+        variants: &[Variant],
+        salt: &str,
+    ) -> String {
+        let mut hasher = DefaultHasher::new();
+        user_id.hash(&mut hasher);
+        experiment_id.hash(&mut hasher);
+        salt.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        let mut cumulative = 0.0;
+        let hash_percent = (hash % 10000) as f64 / 100.0;
+
+        for variant in variants {
+            cumulative += variant.allocation_percent;
+            if hash_percent < cumulative {
+                return variant.name.clone();
+            }
+        }
+
+        variants[0].name.clone()
+    }
+
+    fn select_variant(
+        &self,
+        user_id: &str,
+        experiment_id: Uuid,
+        variants: &[Variant],
+        sampling_method: SamplingMethod,
+        sampling_seed: u64,
+        attributes: Option<serde_json::Value>,
+    ) -> String {
+        match sampling_method {
+            SamplingMethod::Random => {
+                let salt = format!("seed:{}", sampling_seed);
+                self.hash_user_to_variant_with_salt(user_id, experiment_id, variants, &salt)
+            }
+            SamplingMethod::Stratified => {
+                let salt = attributes
+                    .as_ref()
+                    .and_then(|attrs| {
+                        attrs
+                            .get("stratum")
+                            .or_else(|| attrs.get("segment"))
+                            .or_else(|| attrs.get("region"))
+                    })
+                    .and_then(|value| value.as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "default".to_string());
+                self.hash_user_to_variant_with_salt(user_id, experiment_id, variants, &salt)
+            }
+            SamplingMethod::Hash => self.hash_user_to_variant(user_id, experiment_id, variants),
+        }
     }
 
     async fn save_user_group(&self, group: &UserGroup) -> Result<()> {
@@ -308,6 +395,14 @@ pub struct GroupMetrics {
     pub total_users: usize,
     pub active_users: usize,
     pub conversion_rate: f64,
+}
+
+fn sampling_method_from_row(value: &str) -> SamplingMethod {
+    match value {
+        "random" => SamplingMethod::Random,
+        "stratified" => SamplingMethod::Stratified,
+        _ => SamplingMethod::Hash,
+    }
 }
 
 #[cfg(test)]

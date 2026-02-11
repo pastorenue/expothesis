@@ -38,6 +38,13 @@ impl ClickHouseClient {
                     name String,
                     description String,
                     status String,
+                    experiment_type String,
+                    sampling_method String,
+                    analysis_engine String,
+                    sampling_seed UInt64,
+                    feature_flag_id Nullable(String),
+                    feature_gate_id Nullable(String),
+                    health_checks String,
                     hypothesis_null String,
                     hypothesis_alternative String,
                     expected_effect_size Float64,
@@ -58,6 +65,20 @@ impl ClickHouseClient {
             .execute()
             .await
             .context("Failed to create experiments table")?;
+
+        let experiment_alters = [
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS experiment_type String",
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS sampling_method String",
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS analysis_engine String",
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS sampling_seed UInt64",
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS feature_flag_id Nullable(String)",
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS feature_gate_id Nullable(String)",
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS health_checks String",
+        ];
+
+        for alter in experiment_alters {
+            self.client.query(alter).execute().await?;
+        }
 
         // User assignments table
         self.client
@@ -112,6 +133,45 @@ impl ClickHouseClient {
             .execute()
             .await
             .context("Failed to create user_groups table")?;
+
+        // Feature flags table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.feature_flags (
+                    id String,
+                    name String,
+                    description String,
+                    status String,
+                    tags String,
+                    created_at DateTime,
+                    updated_at DateTime
+                ) ENGINE = ReplacingMergeTree(updated_at)
+                ORDER BY id",
+            )
+            .execute()
+            .await
+            .context("Failed to create feature_flags table")?;
+
+        // Feature gates table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.feature_gates (
+                    id String,
+                    flag_id String,
+                    name String,
+                    description String,
+                    status String,
+                    rule String,
+                    default_value UInt8,
+                    pass_value UInt8,
+                    created_at DateTime,
+                    updated_at DateTime
+                ) ENGINE = ReplacingMergeTree(updated_at)
+                ORDER BY id",
+            )
+            .execute()
+            .await
+            .context("Failed to create feature_gates table")?;
 
         info!("Schema initialization complete");
         Ok(())

@@ -9,9 +9,15 @@ import type {
     IngestEventRequest,
     AssignUserRequest,
     MetricEvent,
+    FeatureFlag,
+    FeatureGate,
+    CreateFeatureFlagRequest,
+    CreateFeatureGateRequest,
+    EvaluateFeatureGateRequest,
+    FeatureGateEvaluationResponse,
 } from '../types';
 
-const API_BASE = '/api';
+const API_BASE = 'http://localhost:8080/api';
 
 const api = axios.create({
     baseURL: API_BASE,
@@ -69,6 +75,33 @@ export const userGroupApi = {
 
     assign: (data: AssignUserRequest) =>
         api.post('/user-groups/assign', data),
+};
+
+// Feature Flags
+export const featureFlagApi = {
+    create: (data: CreateFeatureFlagRequest) =>
+        api.post<FeatureFlag>('/feature-flags', data),
+
+    list: () =>
+        api.get<FeatureFlag[]>('/feature-flags'),
+
+    get: (id: string) =>
+        api.get<FeatureFlag>(`/feature-flags/${id}`),
+};
+
+// Feature Gates
+export const featureGateApi = {
+    create: (data: CreateFeatureGateRequest) =>
+        api.post<FeatureGate>('/feature-gates', data),
+
+    list: (flagId?: string) =>
+        api.get<FeatureGate[]>('/feature-gates', { params: flagId ? { flag_id: flagId } : {} }),
+
+    get: (id: string) =>
+        api.get<FeatureGate>(`/feature-gates/${id}`),
+
+    evaluate: (id: string, data: EvaluateFeatureGateRequest) =>
+        api.post<FeatureGateEvaluationResponse>(`/feature-gates/${id}/evaluate`, data),
 };
 
 export default api;

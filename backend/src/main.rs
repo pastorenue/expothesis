@@ -11,7 +11,9 @@ use log::info;
 
 use config::Config;
 use db::ClickHouseClient;
-use services::{EventService, ExperimentService, UserGroupService};
+use services::{
+    EventService, ExperimentService, FeatureFlagService, FeatureGateService, UserGroupService,
+};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -40,6 +42,8 @@ async fn main() -> std::io::Result<()> {
     let db_with_auth = db_client.clone().with_database("expothesis");
     let experiment_service = web::Data::new(ExperimentService::new(db_with_auth.clone()));
     let user_group_service = web::Data::new(UserGroupService::new(db_with_auth.clone()));
+    let feature_flag_service = web::Data::new(FeatureFlagService::new(db_with_auth.clone()));
+    let feature_gate_service = web::Data::new(FeatureGateService::new(db_with_auth.clone()));
     let event_service = web::Data::new(EventService::new(db_with_auth));
 
     // Start HTTP server
@@ -57,10 +61,14 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .app_data(experiment_service.clone())
             .app_data(user_group_service.clone())
+            .app_data(feature_flag_service.clone())
+            .app_data(feature_gate_service.clone())
             .app_data(event_service.clone())
             .configure(api::experiments::configure)
             .configure(api::user_groups::configure)
             .configure(api::events::configure)
+            .configure(api::feature_flags::configure)
+            .configure(api::feature_gates::configure)
             .route("/health", web::get().to(health_check))
     })
     .bind(server_addr)?

@@ -3,25 +3,31 @@ import { ExperimentStatus } from '../types';
 
 interface StatusBadgeProps {
     status: ExperimentStatus;
+    format?: 'upper' | 'title';
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, format = 'upper' }) => {
     const getStatusStyle = () => {
         switch (status) {
             case ExperimentStatus.Running:
-                return 'badge-success';
+                return 'text-emerald-300 status-running';
             case ExperimentStatus.Paused:
-                return 'badge-warning';
+                return 'text-amber-300 status-paused';
             case ExperimentStatus.Stopped:
-                return 'badge-danger';
+                return 'text-rose-300 status-stopped';
             default:
-                return 'badge-gray';
+                return 'text-slate-400 status-draft';
         }
     };
 
+    const label =
+        format === 'title'
+            ? status.charAt(0).toUpperCase() + status.slice(1)
+            : status.toUpperCase();
+
     return (
-        <span className={`badge ${getStatusStyle()}`}>
-            {status.toUpperCase()}
+        <span className={`font-semibold ${getStatusStyle()}`}>
+            {label}
         </span>
     );
 };
@@ -118,13 +124,16 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ current, total, label 
 interface SignificanceIndicatorProps {
     pValue: number;
     alpha?: number;
+    bayesProbability?: number;
 }
 
 export const SignificanceIndicator: React.FC<SignificanceIndicatorProps> = ({
     pValue,
     alpha = 0.05,
+    bayesProbability,
 }) => {
-    const isSignificant = pValue < alpha;
+    const isBayes = bayesProbability !== undefined && bayesProbability !== null;
+    const isSignificant = isBayes ? (bayesProbability ?? 0) >= 0.95 : pValue < alpha;
 
     return (
         <div className="flex items-center gap-2">
@@ -134,10 +143,12 @@ export const SignificanceIndicator: React.FC<SignificanceIndicatorProps> = ({
             />
             <span className={`text-sm font-medium ${isSignificant ? 'text-emerald-300' : 'text-slate-400'
                 }`}>
-                {isSignificant ? 'Significant' : 'Not Significant'}
+                {isBayes ? (isSignificant ? 'High Confidence' : 'Low Confidence') : isSignificant ? 'Significant' : 'Not Significant'}
             </span>
             <span className="text-sm text-slate-500">
-                (p = {pValue !== null && pValue !== undefined && !isNaN(pValue) ? pValue.toFixed(4) : '—'})
+                {isBayes
+                    ? `(P = ${bayesProbability !== null && bayesProbability !== undefined && !isNaN(bayesProbability) ? bayesProbability.toFixed(3) : '—'})`
+                    : `(p = ${pValue !== null && pValue !== undefined && !isNaN(pValue) ? pValue.toFixed(4) : '—'})`}
             </span>
         </div>
     );
