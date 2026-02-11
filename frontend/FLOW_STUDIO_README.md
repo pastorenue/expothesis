@@ -7,14 +7,18 @@ This guide explains how to run and test the Flow Studio UI.
 From the repository root:
 
 ```bash
-docker-compose up --build
+docker-compose up --build -d
 ```
 
 Open the UI:
 
 ```
-http://localhost:3000/flow-studio
+http://localhost:3001/
 ```
+
+Notes:
+- The Compose override runs the frontend in dev mode (Vite) on port 3001.
+- The backend API is available at http://localhost:8080.
 
 ## Build a valid flow
 
