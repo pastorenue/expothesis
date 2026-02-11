@@ -68,6 +68,7 @@ export const FlowStudio: React.FC = () => {
     });
 
     const [isSimulating, setIsSimulating] = React.useState(false);
+    const [isPaused, setIsPaused] = React.useState(false);
     const simulationRef = React.useRef<number | null>(null);
     const [simulationSeries, setSimulationSeries] = React.useState<
         { time: string; ts: number; [key: string]: string | number }[]
@@ -87,10 +88,13 @@ export const FlowStudio: React.FC = () => {
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
     const [errorTooltip, setErrorTooltip] = React.useState<{ x: number; y: number; message: string } | null>(null);
     const draggingRef = React.useRef<{ id: string; offsetX: number; offsetY: number } | null>(null);
+    const panningRef = React.useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
     const reconnectRef = React.useRef<FlowEdge | null>(null);
     const canvasRef = React.useRef<HTMLDivElement | null>(null);
     const [zoom, setZoom] = React.useState(1);
     const zoomRef = React.useRef(1);
+    const [pan, setPan] = React.useState({ x: 0, y: 0 });
+    const panRef = React.useRef(pan);
     const [rangeStart, setRangeStart] = React.useState('');
     const [rangeEnd, setRangeEnd] = React.useState('');
     const [pickerOpen, setPickerOpen] = React.useState<'start' | 'end' | null>(null);
@@ -175,6 +179,8 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         window.addEventListener('mousedown', handleClick);
         return () => window.removeEventListener('mousedown', handleClick);
     }, [pickerOpen]);
+    const getGroupVariantKey = (groupId: string, variant: string) => `${groupId}::${variant}`;
+
     const filteredSeries = React.useMemo(() => {
         if (!rangeStart && !rangeEnd) return simulationSeries;
         const startMs = rangeStart ? new Date(rangeStart).getTime() : null;
@@ -185,6 +191,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             return true;
         });
     }, [simulationSeries, rangeStart, rangeEnd]);
+
 
     const renderCalendar = () => {
         const year = pickerMonth.getFullYear();
@@ -252,19 +259,35 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
     }, [zoom]);
 
     React.useEffect(() => {
+        panRef.current = pan;
+    }, [pan]);
+
+    React.useEffect(() => {
         const handleMove = (event: MouseEvent) => {
             if (!draggingRef.current || !canvasRef.current) return;
             const rect = canvasRef.current.getBoundingClientRect();
             const grid = 20;
-            const nextXRaw = (event.clientX - rect.left) / zoomRef.current - draggingRef.current.offsetX;
-            const nextYRaw = (event.clientY - rect.top) / zoomRef.current - draggingRef.current.offsetY;
+            const nextXRaw =
+                (event.clientX - rect.left - panRef.current.x) / zoomRef.current - draggingRef.current.offsetX;
+            const nextYRaw =
+                (event.clientY - rect.top - panRef.current.y) / zoomRef.current - draggingRef.current.offsetY;
             const nextX = Math.round(nextXRaw / grid) * grid;
             const nextY = Math.round(nextYRaw / grid) * grid;
+            const panOffsetX = panRef.current.x / zoomRef.current;
+            const panOffsetY = panRef.current.y / zoomRef.current;
+            const maxX = Math.max(20, rect.width / zoomRef.current - NODE_WIDTH - panOffsetX);
+            const maxY = Math.max(20, rect.height / zoomRef.current - NODE_HEIGHT - panOffsetY);
+            const minX = Math.min(20, 20 - panOffsetX);
+            const minY = Math.min(20, 20 - panOffsetY);
 
             setNodes((prev) =>
                 prev.map((node) =>
                     node.id === draggingRef.current?.id
-                        ? { ...node, x: Math.max(20, Math.min(nextX, rect.width - 160)), y: Math.max(20, Math.min(nextY, rect.height - 80)) }
+                        ? {
+                              ...node,
+                              x: Math.max(minX, Math.min(nextX, maxX)),
+                              y: Math.max(minY, Math.min(nextY, maxY)),
+                          }
                         : node
                 )
             );
@@ -272,6 +295,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
 
         const handleUp = () => {
             draggingRef.current = null;
+            panningRef.current = null;
             if (pendingFrom && hoverTarget) {
                 setEdges((prev) => {
                     const exists = prev.some((edge) => edge.from === pendingFrom && edge.to === hoverTarget);
@@ -283,10 +307,19 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             }
         };
 
+        const handlePanMove = (event: MouseEvent) => {
+            if (!panningRef.current) return;
+            const dx = event.clientX - panningRef.current.startX;
+            const dy = event.clientY - panningRef.current.startY;
+            setPan({ x: panningRef.current.panX + dx, y: panningRef.current.panY + dy });
+        };
+
         window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mousemove', handlePanMove);
         window.addEventListener('mouseup', handleUp);
         return () => {
             window.removeEventListener('mousemove', handleMove);
+            window.removeEventListener('mousemove', handlePanMove);
             window.removeEventListener('mouseup', handleUp);
         };
     }, []);
@@ -298,8 +331,8 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         if (!node) return;
         draggingRef.current = {
             id: nodeId,
-            offsetX: (event.clientX - rect.left) / zoomRef.current - node.x,
-            offsetY: (event.clientY - rect.top) / zoomRef.current - node.y,
+            offsetX: (event.clientX - rect.left - panRef.current.x) / zoomRef.current - node.x,
+            offsetY: (event.clientY - rect.top - panRef.current.y) / zoomRef.current - node.y,
         };
     };
 
@@ -336,6 +369,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         if (fromNode.kind === 'trigger-start' && toNode.kind === 'experiment') return true;
         if (fromNode.kind === 'experiment' && toNode.kind === 'user-group') return true;
         if (fromNode.kind === 'user-group' && (toNode.kind === 'metric' || toNode.kind === 'hypothesis')) return true;
+        if (fromNode.kind === 'hypothesis' && toNode.kind === 'metric') return true;
         if (fromNode.kind === 'metric' && toNode.kind === 'trigger-run') return true;
         return false;
     };
@@ -361,6 +395,27 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         }
         return visited;
     }, [nodes, edges]);
+
+    const reachableFromStart = React.useMemo(() => {
+        if (!startNode) return new Set<string>();
+        const forward: Record<string, string[]> = {};
+        edges.forEach((edge) => {
+            if (!forward[edge.from]) forward[edge.from] = [];
+            forward[edge.from].push(edge.to);
+        });
+        const visited = new Set<string>();
+        const stack = [startNode.id];
+        while (stack.length > 0) {
+            const current = stack.pop()!;
+            if (visited.has(current)) continue;
+            visited.add(current);
+            const children = forward[current] || [];
+            children.forEach((child) => {
+                if (!visited.has(child)) stack.push(child);
+            });
+        }
+        return visited;
+    }, [edges, startNode?.id]);
 
     const showError = (x: number, y: number, message: string) => {
         setErrorTooltip({ x, y, message });
@@ -393,8 +448,6 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         }
         return false;
     };
-
-    const getGroupVariantKey = (groupId: string, variant: string) => `${groupId}::${variant}`;
 
     const adjustZoom = (next: number) => {
         setZoom(Math.max(0.6, Math.min(1.6, Number(next.toFixed(2)))));
@@ -586,6 +639,36 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         .filter(Boolean) as string[];
     const connectedGroups = userGroups.filter((group) => fullyConnectedGroupIds.includes(group.id));
 
+    const aggregatedSeries = React.useMemo(() => {
+        if (!selectedExperiment) return [];
+        const variants = selectedExperiment.variants.map((variant) => variant.name);
+        return filteredSeries.map((point) => {
+            const next: { time: string; ts: number; [key: string]: string | number } = {
+                time: String(point.time ?? ''),
+                ts: Number(point.ts ?? 0),
+            };
+            variants.forEach((variant) => {
+                let sum = 0;
+                fullyConnectedGroupIds.forEach((groupId) => {
+                    const key = getGroupVariantKey(groupId, variant);
+                    const value = point[key];
+                    if (typeof value === 'number') sum += value;
+                });
+                next[variant] = sum;
+            });
+            return next;
+        });
+    }, [filteredSeries, fullyConnectedGroupIds.join(','), selectedExperiment?.id]);
+
+    const metricNodesForCharts = metricNodes.filter((node) => {
+        const incoming = edges.some((edge) => {
+            if (edge.to !== node.id) return false;
+            const from = getNodeById(edge.from);
+            return from?.kind === 'user-group' || from?.kind === 'hypothesis';
+        });
+        return incoming && reachableFromStart.has(node.id) && reachableToRun.has(node.id);
+    });
+
     const startSatisfied = !startNode || hasOutgoing(startNode.id);
     const canAutoStart =
         selectedExperiment?.status === 'draft' || selectedExperiment?.status === 'paused';
@@ -625,6 +708,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
 
         if (reset) {
             setIsSimulating(true);
+            setIsPaused(false);
             eventCounter.current = {};
             variantCounter.current = {};
             groupVariantCounter.current = {};
@@ -632,6 +716,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             setSimulationSeries([]);
         } else {
             setIsSimulating(true);
+            setIsPaused(false);
         }
         currentExperimentIdRef.current = selectedExperiment.id;
         const variants = selectedExperiment.variants.map((variant) => variant.name);
@@ -712,12 +797,23 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         }
         simulationRef.current = null;
         setIsSimulating(false);
+        setIsPaused(false);
         currentExperimentIdRef.current = null;
+    };
+
+    const pauseSimulation = () => {
+        if (simulationRef.current) {
+            window.clearInterval(simulationRef.current);
+        }
+        simulationRef.current = null;
+        setIsSimulating(false);
+        setIsPaused(true);
     };
 
     React.useEffect(() => {
         groupIdsRef.current = fullyConnectedGroupIds;
         if (flowConnected && isFlowReady && selectedExperiment) {
+            if (isPaused) return;
             if (!simulationRef.current) {
                 simulationKeyRef.current = selectedExperiment.id;
                 void startSimulation(true);
@@ -731,11 +827,18 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             }
             return;
         }
-        if ((!flowConnected || !isFlowReady) && isSimulating) {
+        if ((!flowConnected || !isFlowReady) && (isSimulating || isPaused)) {
             simulationKeyRef.current = null;
             stopSimulation();
         }
-    }, [flowConnected, isFlowReady, selectedExperiment?.id, fullyConnectedGroupIds.join(','), connectedMetricIds.join(',')]);
+    }, [
+        flowConnected,
+        isFlowReady,
+        isPaused,
+        selectedExperiment?.id,
+        fullyConnectedGroupIds.join(','),
+        connectedMetricIds.join(','),
+    ]);
 
     React.useEffect(() => {
         if (!isSimulating || !selectedExperiment) return;
@@ -766,6 +869,16 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                 y: 60 + Math.floor(index / 2) * 120,
             }))
         );
+    };
+
+    const clearCanvas = () => {
+        setNodes([]);
+        setEdges([]);
+        setPendingFrom(null);
+        setHoverTarget(null);
+        setCursor(null);
+        setSelectedNodeId(null);
+        reconnectRef.current = null;
     };
 
     const addNode = (node: FlowNode) => {
@@ -807,29 +920,12 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                         Orchestrate experiments, audiences, and hypotheses in a connected action canvas.
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
-                        <button className="btn-secondary">Save Draft</button>
-                        <button className="btn-primary">Publish Flow</button>
-                    </div>
-                </div>
+            </div>
 
             <div className="card relative overflow-hidden">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.15)_0,transparent_45%)] opacity-60"></div>
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(16,185,129,0.15)_0,transparent_40%)]"></div>
                 <div className="relative">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Enable</span>
-                            <button className="relative h-7 w-12 rounded-full bg-slate-800/80">
-                                <span className="absolute left-1 top-1 h-5 w-5 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.7)]"></span>
-                            </button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span className={pillClass}>Tools</span>
-                            <span className={pillClass}>Executions</span>
-                        </div>
-                    </div>
-
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs text-slate-300">
                         <div className="flex items-center gap-3">
                             <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-500">Flow Config</span>
@@ -1045,25 +1141,14 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                             </div>
 
                             <div>
-                        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
+                        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
                             <span>Drag nodes. Drag from right handles to connect. Click line to remove.</span>
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2">
-                                    <button className="btn-secondary" onClick={() => adjustZoom(zoom - 0.1)}>
-                                        -
-                                    </button>
-                                    <span className="min-w-[3rem] text-center text-emerald-200">
-                                        {Math.round(zoom * 100)}%
-                                    </span>
-                                    <button className="btn-secondary" onClick={() => adjustZoom(zoom + 0.1)}>
-                                        +
-                                    </button>
-                                    <button className="btn-secondary" onClick={() => adjustZoom(1)}>
-                                        Reset
-                                    </button>
-                                </div>
+                            <div className="flex items-center gap-2">
                                 <button className="btn-secondary" onClick={autoLayout}>
                                     Auto Layout
+                                </button>
+                                <button className="btn-secondary" onClick={clearCanvas}>
+                                    Clear Canvas
                                 </button>
                                 <span className={isFlowReady ? 'text-emerald-300' : 'text-amber-300'}>
                                     {isFlowReady ? 'Flow Ready' : 'Connect required inputs'}
@@ -1078,12 +1163,26 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 const direction = event.deltaY > 0 ? -0.1 : 0.1;
                                 adjustZoom(zoomRef.current + direction);
                             }}
+                            onMouseDown={(event) => {
+                                if (event.button !== 0 || pendingFrom) return;
+                                const target = event.target as HTMLElement;
+                                if (target.closest('.flow-node') || target.closest('button') || target.closest('input')) {
+                                    return;
+                                }
+                                event.preventDefault();
+                                panningRef.current = {
+                                    startX: event.clientX,
+                                    startY: event.clientY,
+                                    panX: panRef.current.x,
+                                    panY: panRef.current.y,
+                                };
+                            }}
                             onMouseMove={(event) => {
                                 if (!canvasRef.current || !pendingFrom) return;
                                 const rect = canvasRef.current.getBoundingClientRect();
                                 const next = {
-                                    x: (event.clientX - rect.left) / zoomRef.current,
-                                    y: (event.clientY - rect.top) / zoomRef.current,
+                                    x: (event.clientX - rect.left - panRef.current.x) / zoomRef.current,
+                                    y: (event.clientY - rect.top - panRef.current.y) / zoomRef.current,
                                 };
                                 const target = nodes
                                     .filter((node) => node.id !== pendingFrom)
@@ -1117,7 +1216,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                             className="flow-canvas relative mt-4 min-h-[520px] overflow-hidden rounded-2xl border border-slate-800/70 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.5),rgba(2,6,23,0.9))] p-6"
                         >
                             <div className="absolute right-6 top-6 z-20 flex items-center gap-3 rounded-full border border-slate-700/60 bg-slate-950/80 px-4 py-2 text-xs text-slate-200 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.7)]">
-                                <span className="text-[0.55rem] uppercase tracking-[0.3em] text-slate-400">Zoom</span>
+                                <span className="text-[0.5rem] uppercase tracking-[0.3em] text-slate-400">Zoom</span>
                                 <input
                                     type="range"
                                     min={0.6}
@@ -1125,16 +1224,19 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     step={0.05}
                                     value={zoom}
                                     onChange={(event) => adjustZoom(Number(event.target.value))}
-                                    className="h-1 w-28 accent-emerald-300"
+                                    className="h-1 w-24 accent-emerald-300"
                                 />
-                                <span className="min-w-[3rem] text-center text-emerald-200">
+                                <span className="min-w-[2.5rem] text-center text-emerald-200">
                                     {Math.round(zoom * 100)}%
                                 </span>
                             </div>
-                            <div className="absolute inset-0 origin-top-left" style={{ transform: `scale(${zoom})` }}>
+                            <div
+                                className="absolute inset-0 origin-top-left overflow-visible"
+                                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                            >
                                 <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px]"></div>
 
-                                <svg className="absolute inset-0 h-full w-full pointer-events-none">
+                                <svg className="absolute inset-0 h-full w-full pointer-events-none overflow-visible">
                                 {edges.map((edge) => {
                                     const fromNode = nodes.find((node) => node.id === edge.from);
                                     const toNode = nodes.find((node) => node.id === edge.to);
@@ -1145,13 +1247,17 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     const endY = toNode.y + NODE_HEIGHT / 2;
                                     const midX = (startX + endX) / 2;
                                     const isActiveEdge =
-                                        isSimulating && reachableToRun.has(edge.from) && reachableToRun.has(edge.to);
+                                        isSimulating &&
+                                        reachableToRun.has(edge.from) &&
+                                        reachableToRun.has(edge.to) &&
+                                        (!startNode || (reachableFromStart.has(edge.from) && reachableFromStart.has(edge.to)));
                                     return (
                                         <path
                                             key={`${edge.from}-${edge.to}`}
                                             d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
                                             stroke="rgba(16,185,129,0.6)"
-                                            strokeWidth="2"
+                                            strokeWidth="2.5"
+                                            vectorEffect="non-scaling-stroke"
                                             fill="none"
                                             className={isActiveEdge ? 'flow-line' : ''}
                                         />
@@ -1168,7 +1274,8 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             <path
                                                 d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${cursor.y}, ${cursor.x} ${cursor.y}`}
                                                 stroke="rgba(56,189,248,0.6)"
-                                                strokeWidth="2"
+                                                strokeWidth="2.5"
+                                                vectorEffect="non-scaling-stroke"
                                                 fill="none"
                                                 strokeDasharray="6 6"
                                             />
@@ -1176,7 +1283,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     })()
                                 ) : null}
                                 </svg>
-                                <svg className="absolute inset-0 h-full w-full">
+                                <svg className="absolute inset-0 h-full w-full overflow-visible">
                                 {edges.map((edge) => {
                                     const fromNode = nodes.find((node) => node.id === edge.from);
                                     const toNode = nodes.find((node) => node.id === edge.to);
@@ -1192,6 +1299,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
                                             stroke="transparent"
                                             strokeWidth="12"
+                                            vectorEffect="non-scaling-stroke"
                                             fill="none"
                                             className="cursor-pointer"
                                             onMouseDown={(event) => {
@@ -1199,8 +1307,8 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                                 if (!canvasRef.current) return;
                                                 const rect = canvasRef.current.getBoundingClientRect();
                                                 const next = {
-                                                    x: (event.clientX - rect.left) / zoomRef.current,
-                                                    y: (event.clientY - rect.top) / zoomRef.current,
+                                                    x: (event.clientX - rect.left - panRef.current.x) / zoomRef.current,
+                                                    y: (event.clientY - rect.top - panRef.current.y) / zoomRef.current,
                                                 };
                                                 reconnectRef.current = edge;
                                                 setEdges((prev) => prev.filter((item) => !(item.from === edge.from && item.to === edge.to)));
@@ -1220,6 +1328,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     const outgoing = hasOutgoing(node.id);
                                     const canOutput = node.kind !== 'trigger-run';
                                     const canInput = node.kind !== 'trigger-start';
+                                    const isRunNode = node.kind === 'trigger-run';
                                     return (
                                 <div
                                     key={node.id}
@@ -1244,6 +1353,44 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             ×
                                         </button>
                                     </div>
+                                    {isRunNode && (
+                                        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1">
+                                            <div
+                                                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[0.6rem] ${
+                                                    isSimulating
+                                                        ? 'border-emerald-400/60 text-emerald-200 run-pulse'
+                                                        : isPaused
+                                                        ? 'border-amber-400/60 text-amber-200'
+                                                        : 'border-slate-700/70 text-slate-400'
+                                                }`}
+                                                aria-label={isSimulating ? 'Simulation running' : isPaused ? 'Simulation paused' : 'Simulation idle'}
+                                            >
+                                                ●
+                                            </div>
+                                            <button
+                                                className={`flex h-6 w-6 items-center justify-center rounded-full border text-[0.65rem] font-semibold ${
+                                                    isSimulating
+                                                        ? 'border-emerald-400/60 text-emerald-200'
+                                                        : isPaused
+                                                        ? 'border-amber-400/60 text-amber-200'
+                                                        : 'border-slate-700/70 text-slate-400'
+                                                }`}
+                                                aria-label={isSimulating ? 'Pause simulation' : isPaused ? 'Resume simulation' : 'Run simulation'}
+                                                onMouseDown={(event) => event.stopPropagation()}
+                                                onClick={(event) => {
+                                                    event.stopPropagation();
+                                                    if (!selectedExperiment || !isFlowReady) return;
+                                                    if (isSimulating) {
+                                                        pauseSimulation();
+                                                    } else {
+                                                        void startSimulation(!isPaused);
+                                                    }
+                                                }}
+                                            >
+                                                {isSimulating ? '⏸' : '▶'}
+                                            </button>
+                                        </div>
+                                    )}
                                     <div className="mt-2 flex items-center justify-between text-[0.6rem] uppercase tracking-[0.2em] text-slate-500">
                                         <span>{node.kind.replace('-', ' ')}</span>
                                         <span>{pendingFrom === node.id ? 'link' : ''}</span>
@@ -1304,8 +1451,12 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                         <div className="mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
                             <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
                                 <span>Simulation Output</span>
-                                <span className={isSimulating ? 'text-emerald-300' : 'text-slate-500'}>
-                                    {isSimulating ? 'Running' : 'Idle'}
+                                <span
+                                    className={
+                                        isSimulating ? 'text-emerald-300' : isPaused ? 'text-amber-300' : 'text-slate-500'
+                                    }
+                                >
+                                    {isSimulating ? 'Running' : isPaused ? 'Paused' : 'Idle'}
                                 </span>
                             </div>
                             <div className="relative mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-300">
@@ -1456,43 +1607,137 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                         : 'Connect the Run trigger to start streaming results.'}
                                 </p>
                             ) : (
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                    {connectedGroups.map((group) => (
-                                        <div key={group.id} className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3">
-                                            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                {group.name}
-                                            </div>
-                                            <div className="h-40">
-                                                <ResponsiveContainer width="100%" height="100%">
-                                                    <LineChart data={filteredSeries}>
-                                                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                                        <XAxis dataKey="time" stroke="#94a3b8" />
-                                                        <YAxis stroke="#94a3b8" />
-                                                        <Tooltip
-                                                            contentStyle={{
-                                                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                                border: '1px solid rgba(148, 163, 184, 0.2)',
-                                                                borderRadius: '12px',
-                                                                color: '#e2e8f0',
-                                                            }}
-                                                        />
-                                                        {selectedExperiment?.variants?.map((variant, variantIdx) => (
-                                                            <Line
-                                                                key={`${group.id}-${variant.name}`}
-                                                                type="monotone"
-                                                                dataKey={getGroupVariantKey(group.id, variant.name)}
-                                                                stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
-                                                                strokeWidth={2}
-                                                                name={variant.name}
-                                                                dot={false}
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                        {connectedGroups.map((group) => (
+                                            <div key={group.id} className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3">
+                                                <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
+                                                    {group.name}
+                                                </div>
+                                                <div className="h-40">
+                                                    <ResponsiveContainer width="100%" height="100%">
+                                                        <LineChart data={filteredSeries}>
+                                                            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                                                            <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                                                            <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                                                            <Tooltip
+                                                                contentStyle={{
+                                                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                                                    border: '1px solid rgba(148, 163, 184, 0.2)',
+                                                                    borderRadius: '12px',
+                                                                    color: '#e2e8f0',
+                                                                    fontSize: '11px',
+                                                                }}
                                                             />
-                                                        )) ||
-                                                            null}
-                                                    </LineChart>
-                                                </ResponsiveContainer>
+                                                            {selectedExperiment?.variants?.map((variant, variantIdx) => (
+                                                                <Line
+                                                                    key={`${group.id}-${variant.name}`}
+                                                                    type="monotone"
+                                                                    dataKey={getGroupVariantKey(group.id, variant.name)}
+                                                                    stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
+                                                                    strokeWidth={2}
+                                                                    name={variant.name}
+                                                                    dot={false}
+                                                                />
+                                                            )) ||
+                                                                null}
+                                                        </LineChart>
+                                                    </ResponsiveContainer>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {(hypothesisNodes.length > 0 || metricNodesForCharts.length > 0) &&
+                                        isFlowReady &&
+                                        (isSimulating || isPaused) && (
+                                        <div>
+                                            <div className="mb-3 text-[0.65rem] font-semibold text-slate-500">
+                                                Hypotheses & Metrics
+                                            </div>
+                                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                                {hypothesisNodes.map((node) => (
+                                                    <div
+                                                        key={`hypothesis-${node.id}`}
+                                                        className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
+                                                    >
+                                                        <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
+                                                            {node.data?.hypothesis || node.label}
+                                                        </div>
+                                                        <div className="h-40">
+                                                            <ResponsiveContainer width="100%" height="100%">
+                                                                <LineChart data={aggregatedSeries}>
+                                                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                                                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                                                                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                                                                    <Tooltip
+                                                                        contentStyle={{
+                                                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                                                            border: '1px solid rgba(148, 163, 184, 0.2)',
+                                                                            borderRadius: '12px',
+                                                                            color: '#e2e8f0',
+                                                                            fontSize: '11px',
+                                                                        }}
+                                                                    />
+                                                                    {selectedExperiment?.variants?.map((variant, variantIdx) => (
+                                                                        <Line
+                                                                            key={`${node.id}-${variant.name}`}
+                                                                            type="monotone"
+                                                                            dataKey={variant.name}
+                                                                            stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
+                                                                            strokeWidth={2}
+                                                                            name={variant.name}
+                                                                            dot={false}
+                                                                        />
+                                                                    )) ||
+                                                                        null}
+                                                                </LineChart>
+                                                            </ResponsiveContainer>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {metricNodesForCharts.map((node) => (
+                                                    <div
+                                                        key={`metric-${node.id}`}
+                                                        className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
+                                                    >
+                                                        <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
+                                                            {node.data?.metric || node.label}
+                                                        </div>
+                                                        <div className="h-40">
+                                                            <ResponsiveContainer width="100%" height="100%">
+                                                                <LineChart data={aggregatedSeries}>
+                                                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                                                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                                                                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
+                                                                    <Tooltip
+                                                                        contentStyle={{
+                                                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                                                            border: '1px solid rgba(148, 163, 184, 0.2)',
+                                                                            borderRadius: '12px',
+                                                                            color: '#e2e8f0',
+                                                                            fontSize: '11px',
+                                                                        }}
+                                                                    />
+                                                                    {selectedExperiment?.variants?.map((variant, variantIdx) => (
+                                                                        <Line
+                                                                            key={`${node.id}-${variant.name}`}
+                                                                            type="monotone"
+                                                                            dataKey={variant.name}
+                                                                            stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
+                                                                            strokeWidth={2}
+                                                                            name={variant.name}
+                                                                            dot={false}
+                                                                        />
+                                                                    )) ||
+                                                                        null}
+                                                                </LineChart>
+                                                            </ResponsiveContainer>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -1570,19 +1815,6 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 {metricNodes[0]?.data?.metric || selectedExperiment?.primary_metric || 'Not set'}
                             </p>
                         </div>
-                        <button
-                            className="btn-primary w-full"
-                            onClick={() => {
-                                if (isSimulating) {
-                                    stopSimulation();
-                                } else {
-                                    void startSimulation();
-                                }
-                            }}
-                            disabled={!selectedExperiment || !isFlowReady}
-                        >
-                            {isSimulating ? 'Stop Simulation' : 'Run Simulation'}
-                        </button>
                     </div>
                 </div>
 
