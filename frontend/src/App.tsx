@@ -315,7 +315,7 @@ function ExperimentDetailPage() {
 
     return (
         <div className="space-y-6">
-            <Link to="/" className="inline-flex items-center text-cyan-300 hover:text-cyan-200">
+            <Link to="/dashboard" className="inline-flex items-center text-cyan-300 hover:text-cyan-200">
                 ← Back to Experiments
             </Link>
 
@@ -346,6 +346,155 @@ function ExperimentDetailPage() {
     );
 }
 
+function LandingPage() {
+    return (
+        <div className="landing-page">
+            <header className="landing-header">
+                <div className="landing-brand">
+                    <span className="landing-brand-mark">Ex</span>
+                    <div>
+                        <div className="landing-brand-name">Expothesis</div>
+                        <div className="landing-brand-tag">Experiment Intelligence</div>
+                    </div>
+                </div>
+                <div className="landing-header-actions">
+                    <a href="#platform" className="landing-link">
+                        Platform
+                    </a>
+                    <Link to="/dashboard" className="btn-primary landing-cta">
+                        Go to Dashboard
+                    </Link>
+                </div>
+            </header>
+
+            <section className="landing-hero">
+                <div className="landing-hero-content">
+                    <div className="landing-kicker">Futuristic Experiment Suite</div>
+                    <h1 className="landing-title">
+                        Map, simulate, and activate experiments as living systems.
+                    </h1>
+                    <p className="landing-subtitle">
+                        Bring your product strategy to life with 3D flow orchestration, intelligent gates, and
+                        real-time analytics that feel like an operations command center.
+                    </p>
+                    <div className="landing-hero-actions">
+                        <Link to="/dashboard" className="btn-primary">
+                            Open Dashboard
+                        </Link>
+                        <a href="#platform" className="btn-secondary">
+                            Explore Platform
+                        </a>
+                    </div>
+                    <div className="landing-metrics">
+                        {[
+                            { label: 'Flow Latency', value: '< 200ms' },
+                            { label: 'Gate Accuracy', value: '99.98%' },
+                            { label: 'Streaming Signals', value: '24/7' },
+                        ].map((item) => (
+                            <div key={item.label} className="landing-metric-card">
+                                <p>{item.label}</p>
+                                <span>{item.value}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <div className="landing-hero-visual">
+                    <div className="landing-stack">
+                        <svg className="landing-stack-lines" viewBox="0 0 420 520" fill="none">
+                            <path d="M70 140 L210 250 L350 140" className="landing-line" />
+                            <path d="M70 330 L210 440 L350 330" className="landing-line landing-line-alt" />
+                        </svg>
+
+                        <div className="landing-layer layer-top">
+                            <div className="layer-header">
+                                <span>Build Experience</span>
+                                <div className="layer-chip">API</div>
+                            </div>
+                            <div className="layer-orbit">
+                                {['Audience', 'Journey', 'Signals', 'Activation'].map((label) => (
+                                    <div key={label} className="orbit-node">
+                                        <span>{label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="layer-center">Experiment Flow</div>
+                        </div>
+
+                        <div className="landing-layer layer-mid">
+                            <div className="layer-header">
+                                <span>Process Intelligence Graph</span>
+                                <div className="layer-chip">API</div>
+                            </div>
+                            <div className="layer-graph">
+                                <div className="graph-node" />
+                                <div className="graph-node" />
+                                <div className="graph-node" />
+                                <div className="graph-edge" />
+                            </div>
+                        </div>
+
+                        <div className="landing-layer layer-core">
+                            <div className="layer-header">
+                                <span>Data Core</span>
+                                <div className="layer-chip">API</div>
+                            </div>
+                            <div className="layer-grid">
+                                {Array.from({ length: 24 }).map((_, idx) => (
+                                    <span key={idx} className="grid-cell" />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="platform" className="landing-section">
+                <div className="landing-section-header">
+                    <h2>Designed for experiment orchestration at scale</h2>
+                    <p>
+                        Inspired by modern execution intelligence platforms, Expothesis connects gates, experiments,
+                        and analytics into a single control plane.
+                    </p>
+                </div>
+                <div className="landing-grid">
+                    {[
+                        {
+                            title: '3D Flow Studio',
+                            body: 'Animate your experimentation pipelines with drag-and-drop sequencing, live simulation, and signal paths.',
+                        },
+                        {
+                            title: 'Feature Gates + Experiments',
+                            body: 'Coordinate rollouts, guardrails, and measurement in one place with intelligent gate logic.',
+                        },
+                        {
+                            title: 'Realtime Insight Engine',
+                            body: 'Stream metrics, Bayesian signals, and health checks with continuous analysis.',
+                        },
+                    ].map((item) => (
+                        <div key={item.title} className="landing-feature-card">
+                            <h3>{item.title}</h3>
+                            <p>{item.body}</p>
+                            <span className="landing-card-cta">Learn more →</span>
+                        </div>
+                    ))}
+                </div>
+            </section>
+
+            <section className="landing-section landing-section-bottom">
+                <div className="landing-callout">
+                    <div>
+                        <h2>Command the lifecycle of every experiment.</h2>
+                        <p>Step into the dashboard and launch your first flow.</p>
+                    </div>
+                    <Link to="/dashboard" className="btn-primary">
+                        Enter Dashboard
+                    </Link>
+                </div>
+            </section>
+        </div>
+    );
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
     const location = useLocation();
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
@@ -353,7 +502,7 @@ function Layout({ children }: { children: React.ReactNode }) {
     const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
     const navItems = [
         {
-            to: '/',
+            to: '/dashboard',
             label: 'Experiments',
             icon: (
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -398,6 +547,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                 ? 'Flow Studio'
             : location.pathname.startsWith('/feature-flags')
                 ? 'Feature Flags'
+            : location.pathname.startsWith('/dashboard')
+                ? 'Experiment Dashboard'
             : 'Experiment Dashboard';
 
     React.useEffect(() => {
@@ -411,6 +562,10 @@ function Layout({ children }: { children: React.ReactNode }) {
         document.documentElement.classList.toggle('theme-light', theme === 'light');
         window.localStorage.setItem('expothesis-theme', theme);
     }, [theme]);
+
+    if (location.pathname === '/') {
+        return <>{children}</>;
+    }
 
     return (
         <div className="app-shell">
@@ -426,7 +581,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                     className={`sidebar fixed left-0 top-0 z-40 h-full transform transition-transform duration-300 md:static md:h-auto md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
                         } ${isRailCollapsed ? 'sidebar-collapsed' : 'w-[260px]'}`}
                 >
-                    <Link to="/" className="sidebar-brand">
+                    <Link to="/dashboard" className="sidebar-brand">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-900 font-bold">
                             Ex
                         </div>
@@ -441,8 +596,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                     <nav className="space-y-2">
                         {navItems.map((item) => {
                             const isActive =
-                                item.to === '/'
-                                    ? location.pathname === '/'
+                                item.to === '/dashboard'
+                                    ? location.pathname === '/dashboard'
                                     : location.pathname.startsWith(item.to);
                             return (
                                 <Link
@@ -551,7 +706,8 @@ function App() {
             <BrowserRouter>
                 <Layout>
                     <Routes>
-                        <Route path="/" element={<HomePage />} />
+                        <Route path="/" element={<LandingPage />} />
+                        <Route path="/dashboard" element={<HomePage />} />
                         <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
                         <Route path="/user-groups" element={<UserGroupManager />} />
                         <Route path="/flow-studio" element={<FlowStudio />} />
