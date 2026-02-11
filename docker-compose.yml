@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   backend:
+    container_name: rust-server
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -20,6 +21,7 @@ services:
     restart: always
 
   frontend:
+    container_name: nestjs-app
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -32,6 +34,7 @@ services:
     restart: always
 
   clickhouse:
+    container_name: clickhouse-db
     image: clickhouse/clickhouse-server:latest
     ports:
       - "8123:8123" # HTTP port
