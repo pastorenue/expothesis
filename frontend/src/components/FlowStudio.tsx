@@ -12,9 +12,6 @@ import {
     CartesianGrid,
 } from 'recharts';
 
-const pillClass =
-    'rounded-full border border-slate-800/80 bg-slate-900/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300';
-
 const nodeColorByKind: Record<FlowNode['kind'], { border: string; badge: string }> = {
     'trigger-start': { border: 'border-cyan-400/70', badge: 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50' },
     'trigger-run': { border: 'border-emerald-400/70', badge: 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50' },
