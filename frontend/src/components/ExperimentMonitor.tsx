@@ -21,13 +21,13 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
     const getStatusColor = () => {
         switch (experiment.status) {
             case ExperimentStatus.Running:
-                return 'border-success-500 bg-success-50';
+                return 'border-emerald-400/40 bg-emerald-500/5';
             case ExperimentStatus.Paused:
-                return 'border-warning-500 bg-warning-50';
+                return 'border-amber-300/40 bg-amber-400/5';
             case ExperimentStatus.Stopped:
-                return 'border-danger-500 bg-danger-50';
+                return 'border-rose-400/40 bg-rose-500/5';
             default:
-                return 'border-gray-300 bg-gray-50';
+                return 'border-slate-700/70 bg-slate-900/40';
         }
     };
 
@@ -46,27 +46,27 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
             <div className="mb-4 flex items-start justify-between">
                 <div>
                     <h2 className="mb-1">{experiment.name}</h2>
-                    <p className="text-gray-600">{experiment.description}</p>
+                    <p className="text-slate-400">{experiment.description}</p>
                 </div>
                 <StatusBadge status={experiment.status} />
             </div>
 
             {experiment.hypothesis && (
-                <div className="mb-6 rounded-lg bg-gray-50 p-4 border border-gray-100">
-                    <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-gray-500">Hypothesis</h3>
+                <div className="mb-6 rounded-2xl bg-slate-950/60 p-4 border border-slate-800/70">
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Hypothesis</h3>
                     <div className="space-y-3">
                         <div>
-                            <p className="text-xs font-bold text-gray-400 uppercase">Primary Metric</p>
-                            <p className="text-lg font-semibold text-primary-700">{experiment.primary_metric}</p>
+                            <p className="text-xs font-bold text-slate-500 uppercase">Primary Metric</p>
+                            <p className="text-lg font-semibold text-cyan-300">{experiment.primary_metric}</p>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <p className="text-xs font-bold text-gray-400 uppercase">Null (H₀)</p>
-                                <p className="text-sm text-gray-700">{experiment.hypothesis.null_hypothesis}</p>
+                                <p className="text-xs font-bold text-slate-500 uppercase">Null (H₀)</p>
+                                <p className="text-sm text-slate-300">{experiment.hypothesis.null_hypothesis}</p>
                             </div>
                             <div>
-                                <p className="text-xs font-bold text-gray-400 uppercase">Alternative (H₁)</p>
-                                <p className="text-sm text-gray-700">{experiment.hypothesis.alternative_hypothesis}</p>
+                                <p className="text-xs font-bold text-slate-500 uppercase">Alternative (H₁)</p>
+                                <p className="text-sm text-slate-300">{experiment.hypothesis.alternative_hypothesis}</p>
                             </div>
                         </div>
                     </div>
@@ -92,14 +92,14 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
                 )}
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 border-t border-gray-100 pt-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 soft-divider pt-4">
                 <div>
-                    <p className="text-xs font-bold text-gray-400 uppercase">Created</p>
-                    <p className="text-gray-900 font-medium">{formatDate(experiment.created_at)}</p>
+                    <p className="text-xs font-bold text-slate-500 uppercase">Created</p>
+                    <p className="text-slate-100 font-medium">{formatDate(experiment.created_at)}</p>
                 </div>
                 <div>
-                    <p className="text-xs font-bold text-gray-400 uppercase">Targeting</p>
-                    <p className="text-gray-900 font-medium">
+                    <p className="text-xs font-bold text-slate-500 uppercase">Targeting</p>
+                    <p className="text-slate-100 font-medium">
                         {experiment.user_groups.length > 0
                             ? `${experiment.user_groups.length} Groups`
                             : 'All Users'}
@@ -107,34 +107,34 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
                 </div>
                 {experiment.start_date && (
                     <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase">Started</p>
-                        <p className="text-gray-900 font-medium">{formatDate(experiment.start_date)}</p>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Started</p>
+                        <p className="text-slate-100 font-medium">{formatDate(experiment.start_date)}</p>
                     </div>
                 )}
                 {experiment.end_date && (
                     <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase">Ended</p>
-                        <p className="text-gray-900 font-medium">{formatDate(experiment.end_date)}</p>
+                        <p className="text-xs font-bold text-slate-500 uppercase">Ended</p>
+                        <p className="text-slate-100 font-medium">{formatDate(experiment.end_date)}</p>
                     </div>
                 )}
             </div>
 
             {/* Variants Distribution */}
-            <div className="mt-4 border-t border-gray-200 pt-4">
-                <h3 className="mb-3 text-sm font-semibold text-gray-700">Traffic Distribution</h3>
+            <div className="mt-4 soft-divider pt-4">
+                <h3 className="mb-3 text-sm font-semibold text-slate-200">Traffic Distribution</h3>
                 <div className="space-y-2">
                     {experiment.variants.map((variant, idx) => (
                         <div key={idx}>
                             <div className="mb-1 flex justify-between text-sm">
-                                <span className="font-medium text-gray-700">
+                                <span className="font-medium text-slate-200">
                                     {variant.name}
                                     {variant.is_control && <span className="ml-2 badge-info text-xs">Control</span>}
                                 </span>
-                                <span className="text-gray-600">{variant.allocation_percent}%</span>
+                                <span className="text-slate-400">{variant.allocation_percent}%</span>
                             </div>
-                            <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800/80">
                                 <div
-                                    className={`h-full ${variant.is_control ? 'bg-gray-400' : 'bg-primary-600'}`}
+                                    className={`h-full ${variant.is_control ? 'bg-slate-600' : 'bg-cyan-400'}`}
                                     style={{ width: `${variant.allocation_percent}%` }}
                                 />
                             </div>
@@ -145,22 +145,22 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
 
             {/* Status Messages */}
             {experiment.status === ExperimentStatus.Draft && (
-                <div className="mt-4 rounded-lg bg-primary-50 p-3 border border-primary-100">
-                    <p className="text-sm text-primary-800">
+                <div className="mt-4 rounded-xl bg-cyan-500/10 p-3 border border-cyan-500/20">
+                    <p className="text-sm text-cyan-200">
                         ℹ️ This experiment is in draft mode. Click "Start Experiment" to begin collecting data.
                     </p>
                 </div>
             )}
             {experiment.status === ExperimentStatus.Running && (
-                <div className="mt-4 rounded-lg bg-success-50 p-3 border border-success-100">
-                    <p className="text-sm text-success-800">
+                <div className="mt-4 rounded-xl bg-emerald-500/10 p-3 border border-emerald-500/20">
+                    <p className="text-sm text-emerald-200">
                         ✓ Experiment is running. Users are being assigned to variants and metrics are being collected.
                     </p>
                 </div>
             )}
             {experiment.status === ExperimentStatus.Paused && (
-                <div className="mt-4 rounded-lg bg-warning-50 p-3 border border-warning-100">
-                    <p className="text-sm text-warning-800">
+                <div className="mt-4 rounded-xl bg-amber-400/10 p-3 border border-amber-400/20">
+                    <p className="text-sm text-amber-200">
                         ⏸ Experiment is paused. No new users are being assigned, but existing data is preserved.
                     </p>
                 </div>

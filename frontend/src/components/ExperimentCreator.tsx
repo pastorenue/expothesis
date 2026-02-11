@@ -103,18 +103,18 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                     <div className="flex flex-col items-center">
                         <div
                             className={`flex h-10 w-10 items-center justify-center rounded-full ${step > idx + 1
-                                ? 'bg-success-500 text-white'
+                                ? 'bg-emerald-400 text-slate-900'
                                 : step === idx + 1
-                                    ? 'bg-primary-600 text-white'
-                                    : 'bg-gray-300 text-gray-600'
+                                    ? 'bg-cyan-400 text-slate-900'
+                                    : 'bg-slate-800 text-slate-400'
                                 }`}
                         >
                             {step > idx + 1 ? '✓' : idx + 1}
                         </div>
-                        <span className="mt-2 text-sm font-medium text-gray-700">{label}</span>
+                        <span className="mt-2 text-sm font-medium text-slate-300">{label}</span>
                     </div>
                     {idx < 3 && (
-                        <div className={`mx-4 h-1 flex-1 ${step > idx + 1 ? 'bg-success-500' : 'bg-gray-300'}`} />
+                        <div className={`mx-4 h-1 flex-1 ${step > idx + 1 ? 'bg-emerald-400' : 'bg-slate-800'}`} />
                     )}
                 </div>
             ))}
@@ -159,8 +159,8 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                                         key={group.id}
                                         onClick={() => toggleUserGroup(group.id)}
                                         className={`p-2 text-sm border rounded-md transition-colors ${formData.user_groups?.includes(group.id)
-                                            ? 'bg-primary-100 border-primary-500 text-primary-900'
-                                            : 'bg-white border-gray-200 text-gray-600 hover:border-primary-300'
+                                            ? 'bg-cyan-500/10 border-cyan-400 text-cyan-200'
+                                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-600'
                                             }`}
                                     >
                                         {group.name} ({group.size})
@@ -168,7 +168,7 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                                 ))}
                             </div>
                         ) : (
-                            <p className="text-sm text-gray-500 italic">No user groups available. Experiment will target all users by default.</p>
+                            <p className="text-sm text-slate-500 italic">No user groups available. Experiment will target all users by default.</p>
                         )}
                     </div>
                     <div>
@@ -229,7 +229,7 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                                 value={formData.hypothesis.expected_effect_size}
                                 onChange={(e) => updateHypothesis('expected_effect_size', parseFloat(e.target.value))}
                             />
-                            <p className="mt-1 text-xs text-gray-500">Minimum detectable effect (e.g., 0.05 = 5%)</p>
+                            <p className="mt-1 text-xs text-slate-500">Minimum detectable effect (e.g., 0.05 = 5%)</p>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -263,16 +263,16 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
             {step === 3 && (
                 <div className="space-y-4">
                     {formData.variants.map((variant, idx) => (
-                        <div key={idx} className="rounded-lg border border-gray-200 p-4">
+                        <div key={idx} className="rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
                             <div className="mb-3 flex items-center justify-between">
-                                <h4 className="font-semibold text-gray-800">
+                                <h4 className="font-semibold text-slate-100">
                                     {variant.is_control && <span className="badge-info mr-2">Control</span>}
                                     Variant {idx + 1}
                                 </h4>
                                 {!variant.is_control && formData.variants.length > 2 && (
                                     <button
                                         onClick={() => removeVariant(idx)}
-                                        className="text-danger-600 hover:text-danger-700"
+                                        className="text-rose-300 hover:text-rose-200"
                                     >
                                         Remove
                                     </button>
@@ -315,14 +315,14 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                     <button onClick={addVariant} className="btn-secondary w-full">
                         + Add Variant
                     </button>
-                    <div className="rounded-lg bg-primary-50 p-3">
-                        <p className="text-sm text-primary-800">
+                    <div className="rounded-xl bg-cyan-500/10 p-3 border border-cyan-500/20">
+                        <p className="text-sm text-cyan-200">
                             Total Allocation:{' '}
                             <span className="font-bold">
                                 {formData.variants.reduce((sum, v) => sum + v.allocation_percent, 0).toFixed(1)}%
                             </span>
                             {formData.variants.reduce((sum, v) => sum + v.allocation_percent, 0) !== 100 && (
-                                <span className="ml-2 text-warning-600">⚠ Must equal 100%</span>
+                                <span className="ml-2 text-amber-200">⚠ Must equal 100%</span>
                             )}
                         </p>
                     </div>
@@ -332,12 +332,12 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
             {/* Step 4: Review */}
             {step === 4 && (
                 <div className="space-y-4">
-                    <div className="card bg-gray-50">
+                    <div className="card bg-slate-950/60">
                         <h3 className="mb-2">Experiment Summary</h3>
-                        <p className="font-semibold text-gray-900">{formData.name}</p>
-                        <p className="text-sm text-gray-600">{formData.description}</p>
+                        <p className="font-semibold text-slate-100">{formData.name}</p>
+                        <p className="text-sm text-slate-400">{formData.description}</p>
                     </div>
-                    <div className="card bg-gray-50">
+                    <div className="card bg-slate-950/60">
                         <h3 className="mb-2">Hypothesis</h3>
                         <p className="text-sm">
                             <strong>H₀:</strong> {formData.hypothesis.null_hypothesis}
@@ -346,7 +346,7 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                             <strong>H₁:</strong> {formData.hypothesis.alternative_hypothesis}
                         </p>
                     </div>
-                    <div className="card bg-gray-50">
+                    <div className="card bg-slate-950/60">
                         <h3 className="mb-2">Variants ({formData.variants.length})</h3>
                         <ul className="space-y-1">
                             {formData.variants.map((v, idx) => (

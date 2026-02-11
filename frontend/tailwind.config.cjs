@@ -6,6 +6,11 @@ export default {
     ],
     theme: {
         extend: {
+            fontFamily: {
+                sans: ['"Manrope"', 'ui-sans-serif', 'system-ui'],
+                display: ['"Space Grotesk"', '"Manrope"', 'ui-sans-serif', 'system-ui'],
+                mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular'],
+            },
             colors: {
                 primary: {
                     50: '#f0f9ff',
