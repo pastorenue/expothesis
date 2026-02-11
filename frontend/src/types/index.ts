@@ -5,6 +5,30 @@ export enum ExperimentStatus {
     Stopped = 'stopped',
 }
 
+export enum ExperimentType {
+    AbTest = 'abtest',
+    Multivariate = 'multivariate',
+    FeatureGate = 'featuregate',
+    Holdout = 'holdout',
+}
+
+export enum SamplingMethod {
+    Hash = 'hash',
+    Random = 'random',
+    Stratified = 'stratified',
+}
+
+export enum AnalysisEngine {
+    Frequentist = 'frequentist',
+    Bayesian = 'bayesian',
+}
+
+export enum HealthCheckDirection {
+    AtLeast = 'atleast',
+    AtMost = 'atmost',
+    Between = 'between',
+}
+
 export enum MetricType {
     Proportion = 'proportion',
     Continuous = 'continuous',
@@ -21,6 +45,13 @@ export interface Hypothesis {
     minimum_sample_size?: number;
 }
 
+export interface HealthCheck {
+    metric_name: string;
+    direction: HealthCheckDirection;
+    min?: number;
+    max?: number;
+}
+
 export interface Variant {
     name: string;
     description: string;
@@ -33,6 +64,13 @@ export interface Experiment {
     name: string;
     description: string;
     status: ExperimentStatus;
+    experiment_type: ExperimentType;
+    sampling_method: SamplingMethod;
+    analysis_engine: AnalysisEngine;
+    sampling_seed: number;
+    feature_flag_id?: string;
+    feature_gate_id?: string;
+    health_checks: HealthCheck[];
     hypothesis?: Hypothesis;
     variants: Variant[];
     user_groups: string[];
@@ -66,10 +104,12 @@ export interface StatisticalResult {
     std_dev_b?: number;
     effect_size: number;
     p_value: number;
+    bayes_probability?: number;
     confidence_interval_lower: number;
     confidence_interval_upper: number;
     is_significant: boolean;
     test_type: string;
+    analysis_engine: AnalysisEngine;
     calculated_at: string;
 }
 
@@ -79,15 +119,31 @@ export interface VariantSampleSize {
     required_size: number;
 }
 
+export interface HealthCheckResult {
+    metric_name: string;
+    direction: HealthCheckDirection;
+    min?: number;
+    max?: number;
+    current_value?: number;
+    is_passing: boolean;
+}
+
 export interface ExperimentAnalysis {
     experiment: Experiment;
     results: StatisticalResult[];
     sample_sizes: VariantSampleSize[];
+    health_checks: HealthCheckResult[];
 }
 
 export interface CreateExperimentRequest {
     name: string;
     description: string;
+    experiment_type?: ExperimentType;
+    sampling_method?: SamplingMethod;
+    analysis_engine?: AnalysisEngine;
+    feature_flag_id?: string;
+    feature_gate_id?: string;
+    health_checks?: HealthCheck[];
     hypothesis: Hypothesis;
     variants: Variant[];
     primary_metric: string;
@@ -118,6 +174,67 @@ export interface AssignUserRequest {
     experiment_id: string;
     group_id: string;
     attributes?: Record<string, any>;
+}
+
+export enum FeatureFlagStatus {
+    Active = 'active',
+    Inactive = 'inactive',
+}
+
+export enum FeatureGateStatus {
+    Active = 'active',
+    Inactive = 'inactive',
+}
+
+export interface FeatureFlag {
+    id: string;
+    name: string;
+    description: string;
+    status: FeatureFlagStatus;
+    tags: string[];
+    created_at: string;
+    updated_at: string;
+}
+
+export interface FeatureGate {
+    id: string;
+    flag_id: string;
+    name: string;
+    description: string;
+    status: FeatureGateStatus;
+    rule: string;
+    default_value: boolean;
+    pass_value: boolean;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CreateFeatureFlagRequest {
+    name: string;
+    description: string;
+    status?: FeatureFlagStatus;
+    tags?: string[];
+}
+
+export interface CreateFeatureGateRequest {
+    flag_id: string;
+    name: string;
+    description: string;
+    status?: FeatureGateStatus;
+    rule: string;
+    default_value: boolean;
+    pass_value: boolean;
+}
+
+export interface EvaluateFeatureGateRequest {
+    attributes?: Record<string, any>;
+}
+
+export interface FeatureGateEvaluationResponse {
+    gate_id: string;
+    flag_id: string;
+    pass: boolean;
+    reason: string;
 }
 
 export interface MetricEvent {

@@ -7,6 +7,7 @@ import { ExperimentMonitor } from './components/ExperimentMonitor';
 import { StatisticalDashboard } from './components/StatisticalDashboard';
 import { UserGroupManager } from './components/UserGroupManager';
 import { FlowStudio } from './components/FlowStudio';
+import { FeatureFlagManager } from './components/FeatureFlagManager';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import type { CreateExperimentRequest } from './types';
 
@@ -21,10 +22,13 @@ const queryClient = new QueryClient({
 
 function HomePage() {
     const [showCreator, setShowCreator] = React.useState(false);
-    const [viewMode, setViewMode] = React.useState<'cards' | 'table'>('cards');
     const queryClient = useQueryClient();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    const [sortConfig, setSortConfig] = React.useState<{ key: 'name' | 'start_date'; direction: 'asc' | 'desc' }>({
+        key: 'name',
+        direction: 'asc',
+    });
 
     React.useEffect(() => {
         if (searchParams.get('new') === '1') {
@@ -39,6 +43,30 @@ function HomePage() {
             return response.data;
         },
     });
+
+    const sortedExperiments = React.useMemo(() => {
+        const data = [...experiments];
+        if (sortConfig.key === 'name') {
+            data.sort((a, b) => a.name.localeCompare(b.name));
+        } else {
+            data.sort((a, b) => {
+                const aTime = a.start_date ? new Date(a.start_date).getTime() : Number.POSITIVE_INFINITY;
+                const bTime = b.start_date ? new Date(b.start_date).getTime() : Number.POSITIVE_INFINITY;
+                return aTime - bTime;
+            });
+        }
+        if (sortConfig.direction === 'desc') {
+            data.reverse();
+        }
+        return data;
+    }, [experiments, sortConfig]);
+
+    const toggleSort = (key: 'name' | 'start_date') => {
+        setSortConfig((prev) => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
+        }));
+    };
 
     const startMutation = useMutation({
         mutationFn: (id: string) => experimentApi.start(id),
@@ -63,8 +91,11 @@ function HomePage() {
 
     const createMutation = useMutation({
         mutationFn: (data: CreateExperimentRequest) => experimentApi.create(data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiments'] });
+        onSuccess: (response) => {
+            queryClient.setQueryData(['experiments'], (oldData: any) => {
+                const existing = Array.isArray(oldData) ? oldData : [];
+                return [response.data, ...existing];
+            });
             setShowCreator(false);
         },
     });
@@ -88,26 +119,6 @@ function HomePage() {
                     <p className="mt-1 text-slate-400">Manage and analyze your A/B tests in real time.</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="flex rounded-xl border border-slate-800/80 bg-slate-950/50 p-1">
-                        <button
-                            className={`px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] transition ${viewMode === 'cards'
-                                ? 'rounded-lg bg-slate-800 text-slate-100'
-                                : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                            onClick={() => setViewMode('cards')}
-                        >
-                            Cards
-                        </button>
-                        <button
-                            className={`px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.2em] transition ${viewMode === 'table'
-                                ? 'rounded-lg bg-slate-800 text-slate-100'
-                                : 'text-slate-400 hover:text-slate-200'
-                                }`}
-                            onClick={() => setViewMode('table')}
-                        >
-                            Table
-                        </button>
-                    </div>
                     <button onClick={() => setShowCreator(true)} className="btn-primary">
                         + New
                     </button>
@@ -124,41 +135,39 @@ function HomePage() {
                         Create First Experiment
                     </button>
                 </div>
-            ) : viewMode === 'cards' ? (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    {experiments.map((exp) => (
-                        <Link key={exp.id} to={`/experiment/${exp.id}`} className="block">
-                            <div className="card hover:border-slate-700/80 transition-shadow">
-                                <div className="mb-3 flex items-start justify-between">
-                                    <h3>{exp.name}</h3>
-                                    <StatusBadge status={exp.status} />
-                                </div>
-                                <p className="mb-3 text-sm text-slate-400">{exp.description}</p>
-                                <div className="grid grid-cols-2 gap-3 soft-divider pt-3">
-                                    <div>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Primary Metric</p>
-                                        <p className="font-medium text-slate-100">{exp.primary_metric}</p>
-                                    </div>
-                                    <div>
-                                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Variants</p>
-                                        <p className="font-medium text-slate-100">{exp.variants.length}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </Link>
-                    ))}
-                </div>
             ) : (
                 <div className="card overflow-hidden">
-                    <div className="grid grid-cols-[1.4fr_1fr_140px_120px_140px] gap-4 border-b border-slate-800/70 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                        <span>Name</span>
+                    <div className="grid grid-cols-[48px_1.4fr_1fr_120px_120px_120px_140px_140px_140px] gap-4 border-b border-slate-800/70 px-4 py-2 text-sm font-bold text-slate-300">
+                        <span>#</span>
+                        <button
+                            type="button"
+                            onClick={() => toggleSort('name')}
+                            className="flex items-center gap-2 text-left"
+                        >
+                            Name
+                            <span className="text-xs">
+                                {sortConfig.key === 'name' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                            </span>
+                        </button>
                         <span>Primary Metric</span>
+                        <span>Gate</span>
+                        <button
+                            type="button"
+                            onClick={() => toggleSort('start_date')}
+                            className="flex items-center gap-2 text-left"
+                        >
+                            Start Date
+                            <span className="text-xs">
+                                {sortConfig.key === 'start_date' ? (sortConfig.direction === 'asc' ? '▲' : '▼') : ''}
+                            </span>
+                        </button>
+                        <span>Owner</span>
                         <span>Variants</span>
                         <span>Status</span>
                         <span>Actions</span>
                     </div>
                     <div className="divide-y divide-slate-800/70">
-                        {experiments.map((exp) => (
+                        {sortedExperiments.map((exp, index) => (
                             <div
                                 key={exp.id}
                                 role="button"
@@ -170,15 +179,24 @@ function HomePage() {
                                         navigate(`/experiment/${exp.id}`);
                                     }
                                 }}
-                                className="grid grid-cols-[1.4fr_1fr_140px_120px_140px] gap-4 px-4 py-4 text-sm text-slate-200 transition hover:bg-slate-900/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                                className="table-row grid grid-cols-[48px_1.4fr_1fr_120px_120px_120px_140px_140px_140px] gap-4 px-4 py-2 text-sm leading-none text-slate-200 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
                             >
-                                <div>
-                                    <div className="font-semibold text-slate-100">{exp.name}</div>
-                                    <div className="text-xs text-slate-500">{exp.description}</div>
-                                </div>
+                                <span className="text-slate-400">{index + 1}</span>
+                                <div className="font-semibold text-slate-100">{exp.name}</div>
                                 <span className="text-slate-300">{exp.primary_metric}</span>
+                                <span className="text-slate-300">
+                                    {exp.feature_gate_id ? (
+                                        <span className="badge-info">Linked</span>
+                                    ) : (
+                                        '—'
+                                    )}
+                                </span>
+                                <span className="text-slate-300">
+                                    {exp.start_date ? new Date(exp.start_date).toLocaleDateString() : '—'}
+                                </span>
+                                <span className="text-slate-300">Unassigned</span>
                                 <span className="text-slate-300">{exp.variants.length}</span>
-                                <StatusBadge status={exp.status} />
+                                <StatusBadge status={exp.status} format="title" />
                                 <div className="flex items-center gap-2">
                                     {(exp.status === 'draft' || exp.status === 'paused') && (
                                         <button
@@ -361,6 +379,15 @@ function Layout({ children }: { children: React.ReactNode }) {
                 </svg>
             ),
         },
+        {
+            to: '/feature-flags',
+            label: 'Feature Flags',
+            icon: (
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v18m0-15h9l-2 3 2 3H5" />
+                </svg>
+            ),
+        },
     ];
 
     const pageTitle = location.pathname.startsWith('/experiment/')
@@ -369,6 +396,8 @@ function Layout({ children }: { children: React.ReactNode }) {
             ? 'User Segments'
             : location.pathname.startsWith('/flow-studio')
                 ? 'Flow Studio'
+            : location.pathname.startsWith('/feature-flags')
+                ? 'Feature Flags'
             : 'Experiment Dashboard';
 
     React.useEffect(() => {
@@ -526,6 +555,7 @@ function App() {
                         <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
                         <Route path="/user-groups" element={<UserGroupManager />} />
                         <Route path="/flow-studio" element={<FlowStudio />} />
+                        <Route path="/feature-flags" element={<FeatureFlagManager />} />
                     </Routes>
                 </Layout>
             </BrowserRouter>

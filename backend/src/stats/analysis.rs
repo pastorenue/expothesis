@@ -2,6 +2,17 @@ use anyhow::Result;
 use statrs::distribution::{ContinuousCDF, Normal, StudentsT};
 use statrs::statistics::Statistics;
 
+use crate::models::AnalysisEngine;
+
+pub struct EngineResult {
+    pub effect_size: f64,
+    pub p_value: f64,
+    pub bayes_probability: Option<f64>,
+    pub ci_low: f64,
+    pub ci_high: f64,
+    pub test_type: String,
+}
+
 /// Calculate z-test for proportions (conversion rates)
 pub fn z_test_proportions(
     successes_a: usize,
@@ -61,6 +72,39 @@ pub fn t_test_two_sample(values_a: &[f64], values_b: &[f64]) -> Result<(f64, f64
     ))
 }
 
+/// Calculate two-sample t-test from summary stats (mean, std dev, n)
+pub fn t_test_summary(
+    mean_a: f64,
+    std_a: f64,
+    n_a: usize,
+    mean_b: f64,
+    std_b: f64,
+    n_b: usize,
+) -> Result<(f64, f64, f64, f64)> {
+    let n_a = n_a as f64;
+    let n_b = n_b as f64;
+
+    let var_a = std_a.powi(2);
+    let var_b = std_b.powi(2);
+    let se = (var_a / n_a + var_b / n_b).sqrt();
+    let t_stat = (mean_a - mean_b) / se;
+
+    let df = (var_a / n_a + var_b / n_b).powi(2)
+        / ((var_a / n_a).powi(2) / (n_a - 1.0) + (var_b / n_b).powi(2) / (n_b - 1.0));
+
+    let students_t = StudentsT::new(0.0, 1.0, df)?;
+    let p_value = 2.0 * (1.0 - students_t.cdf(t_stat.abs()));
+    let effect_size = mean_a - mean_b;
+    let ci_margin = students_t.inverse_cdf(0.975) * se;
+
+    Ok((
+        effect_size,
+        p_value,
+        effect_size - ci_margin,
+        effect_size + ci_margin,
+    ))
+}
+
 /// Calculate required sample size for proportion test
 pub fn sample_size_proportion(
     baseline_conversion: f64,
@@ -97,6 +141,141 @@ pub fn sample_size_continuous(std_dev: f64, mde: f64, alpha: f64, power: f64) ->
 /// Calculate Cohen's d effect size
 pub fn cohens_d(mean_a: f64, mean_b: f64, std_pooled: f64) -> f64 {
     (mean_a - mean_b) / std_pooled
+}
+
+pub fn analyze_proportion(
+    engine: AnalysisEngine,
+    successes_a: usize,
+    total_a: usize,
+    successes_b: usize,
+    total_b: usize,
+) -> Result<EngineResult> {
+    match engine {
+        AnalysisEngine::Bayesian => {
+            let (effect_size, probability, ci_low, ci_high) =
+                bayes_proportion(successes_a, total_a, successes_b, total_b)?;
+            Ok(EngineResult {
+                effect_size,
+                p_value: 1.0 - probability,
+                bayes_probability: Some(probability),
+                ci_low,
+                ci_high,
+                test_type: "Bayesian (Beta-Binomial)".to_string(),
+            })
+        }
+        AnalysisEngine::Frequentist => {
+            let (effect_size, p_value, ci_low, ci_high) =
+                z_test_proportions(successes_a, total_a, successes_b, total_b)?;
+            Ok(EngineResult {
+                effect_size,
+                p_value,
+                bayes_probability: None,
+                ci_low,
+                ci_high,
+                test_type: "Z-test for proportions".to_string(),
+            })
+        }
+    }
+}
+
+pub fn analyze_continuous(
+    engine: AnalysisEngine,
+    mean_a: f64,
+    std_a: f64,
+    n_a: usize,
+    mean_b: f64,
+    std_b: f64,
+    n_b: usize,
+) -> Result<EngineResult> {
+    match engine {
+        AnalysisEngine::Bayesian => {
+            let (effect_size, probability, ci_low, ci_high) =
+                bayes_continuous(mean_a, std_a, n_a, mean_b, std_b, n_b)?;
+            Ok(EngineResult {
+                effect_size,
+                p_value: 1.0 - probability,
+                bayes_probability: Some(probability),
+                ci_low,
+                ci_high,
+                test_type: "Bayesian (Normal Approx)".to_string(),
+            })
+        }
+        AnalysisEngine::Frequentist => {
+            let (effect_size, p_value, ci_low, ci_high) =
+                t_test_summary(mean_a, std_a, n_a, mean_b, std_b, n_b)?;
+            Ok(EngineResult {
+                effect_size,
+                p_value,
+                bayes_probability: None,
+                ci_low,
+                ci_high,
+                test_type: "Welch's t-test".to_string(),
+            })
+        }
+    }
+}
+
+fn bayes_proportion(
+    successes_a: usize,
+    total_a: usize,
+    successes_b: usize,
+    total_b: usize,
+) -> Result<(f64, f64, f64, f64)> {
+    let failures_a = total_a.saturating_sub(successes_a) as f64;
+    let failures_b = total_b.saturating_sub(successes_b) as f64;
+    let alpha_a = 1.0 + successes_a as f64;
+    let beta_a = 1.0 + failures_a;
+    let alpha_b = 1.0 + successes_b as f64;
+    let beta_b = 1.0 + failures_b;
+
+    let mean_a = alpha_a / (alpha_a + beta_a);
+    let mean_b = alpha_b / (alpha_b + beta_b);
+    let var_a = (alpha_a * beta_a)
+        / ((alpha_a + beta_a).powi(2) * (alpha_a + beta_a + 1.0));
+    let var_b = (alpha_b * beta_b)
+        / ((alpha_b + beta_b).powi(2) * (alpha_b + beta_b + 1.0));
+
+    let diff_mean = mean_b - mean_a;
+    let diff_var = var_a + var_b;
+    let diff_se = diff_var.sqrt().max(1e-9);
+
+    let normal = Normal::new(0.0, 1.0)?;
+    let z = diff_mean / diff_se;
+    let probability = normal.cdf(z);
+    let ci_margin = 1.96 * diff_se;
+
+    Ok((
+        diff_mean,
+        probability,
+        diff_mean - ci_margin,
+        diff_mean + ci_margin,
+    ))
+}
+
+fn bayes_continuous(
+    mean_a: f64,
+    std_a: f64,
+    n_a: usize,
+    mean_b: f64,
+    std_b: f64,
+    n_b: usize,
+) -> Result<(f64, f64, f64, f64)> {
+    let n_a = n_a as f64;
+    let n_b = n_b as f64;
+    let se = (std_a.powi(2) / n_a + std_b.powi(2) / n_b).sqrt().max(1e-9);
+    let diff_mean = mean_b - mean_a;
+
+    let normal = Normal::new(0.0, 1.0)?;
+    let z = diff_mean / se;
+    let probability = normal.cdf(z);
+    let ci_margin = 1.96 * se;
+
+    Ok((
+        diff_mean,
+        probability,
+        diff_mean - ci_margin,
+        diff_mean + ci_margin,
+    ))
 }
 
 #[cfg(test)]

@@ -48,7 +48,7 @@ type FlowEdge = {
 
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 72;
-const HANDLE_CENTER_OFFSET = 4;
+const HANDLE_CENTER_OFFSET = 10;
 
 export const FlowStudio: React.FC = () => {
     const { data: experiments = [] } = useQuery({
@@ -912,7 +912,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
     const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
 
     return (
-        <div className="space-y-6">
+        <div className="flow-studio space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <h1>Flow Studio</h1>
@@ -926,7 +926,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.15)_0,transparent_45%)] opacity-60"></div>
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(16,185,129,0.15)_0,transparent_40%)]"></div>
                 <div className="relative">
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs text-slate-300">
+                    <div className="flow-surface mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs text-slate-300">
                         <div className="flex items-center gap-3">
                             <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-500">Flow Config</span>
                             <button
@@ -1014,14 +1014,14 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                         {importError && <div className="text-xs text-rose-300">{importError}</div>}
                     </div>
 
-                    <div className="mt-6 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-6">
+                    <div className="flow-surface mt-6 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-6">
                         <div className="space-y-4">
                             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.2fr_1.2fr_1.2fr_1.2fr]">
                                 <details className="panel" open>
                                     <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
                                         Triggers
                                     </summary>
-                                    <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <div className="mt-3 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto pr-1">
                                         <button
                                             className={nodeBadgeClass('trigger-start')}
                                             onClick={() => createNode({ kind: 'trigger-start', label: 'Start' })}
@@ -1040,7 +1040,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
                                         Experiments
                                     </summary>
-                                    <div className="mt-3 space-y-2">
+                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
                                         {experiments.length === 0 && (
                                             <p className="text-xs text-slate-500">No experiments available.</p>
                                         )}
@@ -1065,7 +1065,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
                                         User Groups
                                     </summary>
-                                    <div className="mt-3 space-y-2">
+                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
                                         {userGroups.length === 0 && (
                                             <p className="text-xs text-slate-500">No user groups available.</p>
                                         )}
@@ -1090,7 +1090,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
                                         Hypothesis
                                     </summary>
-                                    <div className="mt-3 space-y-2">
+                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
                                         {experiments.map((exp) =>
                                             exp.hypothesis?.alternative_hypothesis ? (
                                                 <button
@@ -1117,7 +1117,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
                                         Metrics
                                     </summary>
-                                    <div className="mt-3 space-y-2">
+                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
                                         {[...new Set(experiments.map((exp) => exp.primary_metric).filter(Boolean))].map((metric) => (
                                             <button
                                                 key={metric}
@@ -1241,7 +1241,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     const fromNode = nodes.find((node) => node.id === edge.from);
                                     const toNode = nodes.find((node) => node.id === edge.to);
                                     if (!fromNode || !toNode) return null;
-                                    const startX = fromNode.x + NODE_WIDTH + HANDLE_CENTER_OFFSET;
+                                    const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
                                     const startY = fromNode.y + NODE_HEIGHT / 2;
                                     const endX = toNode.x - HANDLE_CENTER_OFFSET;
                                     const endY = toNode.y + NODE_HEIGHT / 2;
@@ -1267,7 +1267,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     (() => {
                                         const fromNode = nodes.find((node) => node.id === pendingFrom);
                                         if (!fromNode) return null;
-                                        const startX = fromNode.x + NODE_WIDTH + HANDLE_CENTER_OFFSET;
+                                        const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
                                         const startY = fromNode.y + NODE_HEIGHT / 2;
                                         const midX = (startX + cursor.x) / 2;
                                         return (
@@ -1288,7 +1288,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     const fromNode = nodes.find((node) => node.id === edge.from);
                                     const toNode = nodes.find((node) => node.id === edge.to);
                                     if (!fromNode || !toNode) return null;
-                                    const startX = fromNode.x + NODE_WIDTH + HANDLE_CENTER_OFFSET;
+                                    const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
                                     const startY = fromNode.y + NODE_HEIGHT / 2;
                                     const endX = toNode.x - HANDLE_CENTER_OFFSET;
                                     const endY = toNode.y + NODE_HEIGHT / 2;
@@ -1407,7 +1407,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             onMouseDown={(event) => {
                                                 event.stopPropagation();
                                                 setPendingFrom(node.id);
-                                                setCursor({ x: node.x + NODE_WIDTH + HANDLE_CENTER_OFFSET, y: node.y + NODE_HEIGHT / 2 });
+                                                setCursor({ x: node.x + NODE_WIDTH - HANDLE_CENTER_OFFSET, y: node.y + NODE_HEIGHT / 2 });
                                             }}
                                             aria-label="Start connection"
                                         >
@@ -1448,7 +1448,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 )}
                             </div>
                         </div>
-                        <div className="mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
+                        <div className="simulation-output flow-surface mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
                             <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
                                 <span>Simulation Output</span>
                                 <span
@@ -1464,7 +1464,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     <span className="uppercase tracking-[0.2em] text-slate-500">From</span>
                                     <button
                                         ref={startRef}
-                                        className="rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
+                                        className="flow-pill rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
                                         onClick={(event) => {
                                             const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
                                             setPickerPos({ top: rect.bottom + 8, left: rect.left });
@@ -1478,7 +1478,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     <span className="uppercase tracking-[0.2em] text-slate-500">To</span>
                                     <button
                                         ref={endRef}
-                                        className="rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
+                                        className="flow-pill rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
                                         onClick={(event) => {
                                             const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
                                             setPickerPos({ top: rect.bottom + 8, left: rect.left });
@@ -1501,7 +1501,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 {pickerOpen && pickerPos && (
                                     <div
                                         ref={pickerRef}
-                                        className="fixed z-50 w-[320px] rounded-2xl border border-slate-800/70 bg-slate-950/95 p-4 shadow-[0_30px_60px_-40px_rgba(15,23,42,0.9)]"
+                                        className="flow-surface fixed z-50 w-[320px] rounded-2xl border border-slate-800/70 bg-slate-950/95 p-4 shadow-[0_30px_60px_-40px_rgba(15,23,42,0.9)]"
                                         style={{ top: pickerPos.top, left: pickerPos.left }}
                                     >
                                         <div className="mb-3 flex items-center justify-between text-xs text-slate-300">
@@ -1610,7 +1610,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 <div className="space-y-6">
                                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                                         {connectedGroups.map((group) => (
-                                            <div key={group.id} className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3">
+                                            <div key={group.id} className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3">
                                                 <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
                                                     {group.name}
                                                 </div>
@@ -1658,7 +1658,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                                 {hypothesisNodes.map((node) => (
                                                     <div
                                                         key={`hypothesis-${node.id}`}
-                                                        className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
+                                                        className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
                                                     >
                                                         <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
                                                             {node.data?.hypothesis || node.label}
@@ -1698,7 +1698,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                                 {metricNodesForCharts.map((node) => (
                                                     <div
                                                         key={`metric-${node.id}`}
-                                                        className="rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
+                                                        className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
                                                     >
                                                         <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
                                                             {node.data?.metric || node.label}
@@ -1765,7 +1765,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                             </div>
                         ))}
                     </div>
-                    <div className="mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
+                    <div className="flow-surface mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
                         <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
                             <span>Latest Signals</span>
                             <span className="text-emerald-300">Streaming</span>

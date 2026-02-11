@@ -42,7 +42,7 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
     };
 
     return (
-        <div className={`card border-2 ${getStatusColor()} animate-fade-in`}>
+        <div className={`experiment-monitor card border-2 ${getStatusColor()} animate-fade-in`}>
             <div className="mb-4 flex items-start justify-between">
                 <div>
                     <h2 className="mb-1">{experiment.name}</h2>
@@ -104,6 +104,14 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
                             ? `${experiment.user_groups.length} Groups`
                             : 'All Users'}
                     </p>
+                </div>
+                <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase">Type</p>
+                    <p className="text-slate-100 font-medium">{experiment.experiment_type}</p>
+                </div>
+                <div>
+                    <p className="text-xs font-bold text-slate-500 uppercase">Engine</p>
+                    <p className="text-slate-100 font-medium">{experiment.analysis_engine}</p>
                 </div>
                 {experiment.start_date && (
                     <div>

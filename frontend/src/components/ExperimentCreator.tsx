@@ -1,8 +1,20 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { CreateExperimentRequest, Hypothesis, Variant, MetricType } from '../types';
-import { MetricType as MT } from '../types';
-import { userGroupApi } from '../services/api';
+import type {
+    CreateExperimentRequest,
+    Hypothesis,
+    Variant,
+    MetricType,
+    HealthCheck,
+} from '../types';
+import {
+    MetricType as MT,
+    ExperimentType,
+    SamplingMethod,
+    AnalysisEngine,
+    HealthCheckDirection,
+} from '../types';
+import { userGroupApi, featureFlagApi, featureGateApi } from '../services/api';
 
 interface ExperimentCreatorProps {
     onSubmit: (experiment: CreateExperimentRequest) => void;
@@ -14,6 +26,10 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
     const [formData, setFormData] = useState<CreateExperimentRequest>({
         name: '',
         description: '',
+        experiment_type: ExperimentType.AbTest,
+        sampling_method: SamplingMethod.Hash,
+        analysis_engine: AnalysisEngine.Frequentist,
+        health_checks: [],
         hypothesis: {
             null_hypothesis: '',
             alternative_hypothesis: '',
@@ -34,6 +50,22 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
         queryKey: ['userGroups'],
         queryFn: async () => {
             const response = await userGroupApi.list();
+            return response.data;
+        },
+    });
+
+    const { data: featureFlags = [] } = useQuery({
+        queryKey: ['featureFlags'],
+        queryFn: async () => {
+            const response = await featureFlagApi.list();
+            return response.data;
+        },
+    });
+
+    const { data: featureGates = [] } = useQuery({
+        queryKey: ['featureGates'],
+        queryFn: async () => {
+            const response = await featureGateApi.list();
             return response.data;
         },
     });
@@ -92,13 +124,44 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
         }
     };
 
+    const addHealthCheck = () => {
+        setFormData((prev) => ({
+            ...prev,
+            health_checks: [
+                ...(prev.health_checks || []),
+                {
+                    metric_name: '',
+                    direction: HealthCheckDirection.AtLeast,
+                    min: 0,
+                    max: 1,
+                } as HealthCheck,
+            ],
+        }));
+    };
+
+    const updateHealthCheck = (index: number, field: keyof HealthCheck, value: any) => {
+        setFormData((prev) => {
+            const current = prev.health_checks || [];
+            const updated = [...current];
+            updated[index] = { ...updated[index], [field]: value };
+            return { ...prev, health_checks: updated };
+        });
+    };
+
+    const removeHealthCheck = (index: number) => {
+        setFormData((prev) => ({
+            ...prev,
+            health_checks: (prev.health_checks || []).filter((_, i) => i !== index),
+        }));
+    };
+
     const handleSubmit = () => {
         onSubmit(formData);
     };
 
     const renderStepIndicator = () => (
         <div className="mb-8 flex justify-between">
-            {['Basic Info', 'Hypothesis', 'Variants', 'Review'].map((label, idx) => (
+            {['Basics', 'Hypothesis', 'Variants', 'Review'].map((label, idx) => (
                 <div key={idx} className="flex flex-1 items-center">
                     <div className="flex flex-col items-center">
                         <div
@@ -180,6 +243,141 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                             onChange={(e) => updateField('primary_metric', e.target.value)}
                             placeholder="e.g., conversion_rate, average_order_value"
                         />
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                        <div>
+                            <label className="label">Experiment Type</label>
+                            <select
+                                className="input"
+                                value={formData.experiment_type}
+                                onChange={(e) => updateField('experiment_type', e.target.value as ExperimentType)}
+                            >
+                                <option value={ExperimentType.AbTest}>A/B Test</option>
+                                <option value={ExperimentType.Multivariate}>Multivariate</option>
+                                <option value={ExperimentType.FeatureGate}>Feature Gate</option>
+                                <option value={ExperimentType.Holdout}>Holdout</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="label">Sampling Method</label>
+                            <select
+                                className="input"
+                                value={formData.sampling_method}
+                                onChange={(e) => updateField('sampling_method', e.target.value as SamplingMethod)}
+                            >
+                                <option value={SamplingMethod.Hash}>Hash (Deterministic)</option>
+                                <option value={SamplingMethod.Random}>Random</option>
+                                <option value={SamplingMethod.Stratified}>Stratified</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="label">Analysis Engine</label>
+                            <select
+                                className="input"
+                                value={formData.analysis_engine}
+                                onChange={(e) => updateField('analysis_engine', e.target.value as AnalysisEngine)}
+                            >
+                                <option value={AnalysisEngine.Frequentist}>Frequentist</option>
+                                <option value={AnalysisEngine.Bayesian}>Bayesian</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div>
+                            <label className="label">Feature Flag</label>
+                            <select
+                                className="input"
+                                value={formData.feature_flag_id || ''}
+                                onChange={(e) =>
+                                    setFormData((prev) => ({
+                                        ...prev,
+                                        feature_flag_id: e.target.value || undefined,
+                                        feature_gate_id: undefined,
+                                    }))
+                                }
+                            >
+                                <option value="">Not linked</option>
+                                {featureFlags.map((flag) => (
+                                    <option key={flag.id} value={flag.id}>
+                                        {flag.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="label">Feature Gate</label>
+                            <select
+                                className="input"
+                                value={formData.feature_gate_id || ''}
+                                onChange={(e) => updateField('feature_gate_id', e.target.value || undefined)}
+                            >
+                                <option value="">Not linked</option>
+                                {featureGates
+                                    .filter((gate) =>
+                                        formData.feature_flag_id ? gate.flag_id === formData.feature_flag_id : true
+                                    )
+                                    .map((gate) => (
+                                        <option key={gate.id} value={gate.id}>
+                                            {gate.name}
+                                        </option>
+                                    ))}
+                            </select>
+                            <p className="mt-1 text-xs text-slate-500">Tie gates to feature flags for rollout control.</p>
+                        </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
+                        <div className="flex items-center justify-between">
+                            <h4 className="font-semibold text-slate-100">Health Checks</h4>
+                            <button onClick={addHealthCheck} className="btn-secondary">
+                                + Add Health Check
+                            </button>
+                        </div>
+                        {(formData.health_checks || []).length === 0 ? (
+                            <p className="mt-3 text-sm text-slate-500">No health checks configured.</p>
+                        ) : (
+                            <div className="mt-4 space-y-3">
+                                {(formData.health_checks || []).map((check, idx) => (
+                                    <div key={idx} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-800/70 bg-slate-950/60 p-3 md:grid-cols-[1.2fr_1fr_1fr_80px]">
+                                        <input
+                                            className="input"
+                                            placeholder="Metric name"
+                                            value={check.metric_name}
+                                            onChange={(e) => updateHealthCheck(idx, 'metric_name', e.target.value)}
+                                        />
+                                        <select
+                                            className="input"
+                                            value={check.direction}
+                                            onChange={(e) =>
+                                                updateHealthCheck(idx, 'direction', e.target.value as HealthCheckDirection)
+                                            }
+                                        >
+                                            <option value={HealthCheckDirection.AtLeast}>At least</option>
+                                            <option value={HealthCheckDirection.AtMost}>At most</option>
+                                            <option value={HealthCheckDirection.Between}>Between</option>
+                                        </select>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="number"
+                                                className="input"
+                                                placeholder="Min"
+                                                value={check.min ?? ''}
+                                                onChange={(e) => updateHealthCheck(idx, 'min', e.target.value ? Number(e.target.value) : undefined)}
+                                            />
+                                            <input
+                                                type="number"
+                                                className="input"
+                                                placeholder="Max"
+                                                value={check.max ?? ''}
+                                                onChange={(e) => updateHealthCheck(idx, 'max', e.target.value ? Number(e.target.value) : undefined)}
+                                            />
+                                        </div>
+                                        <button onClick={() => removeHealthCheck(idx)} className="btn-danger">
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -336,6 +534,12 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                         <h3 className="mb-2">Experiment Summary</h3>
                         <p className="font-semibold text-slate-100">{formData.name}</p>
                         <p className="text-sm text-slate-400">{formData.description}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-slate-300">
+                            <span>Type: {formData.experiment_type}</span>
+                            <span>Sampling: {formData.sampling_method}</span>
+                            <span>Engine: {formData.analysis_engine}</span>
+                            <span>Primary Metric: {formData.primary_metric || '—'}</span>
+                        </div>
                     </div>
                     <div className="card bg-slate-950/60">
                         <h3 className="mb-2">Hypothesis</h3>
@@ -355,6 +559,29 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                                 </li>
                             ))}
                         </ul>
+                    </div>
+                    <div className="card bg-slate-950/60">
+                        <h3 className="mb-2">Feature Gate Link</h3>
+                        <p className="text-sm text-slate-300">
+                            Flag: {featureFlags.find((flag) => flag.id === formData.feature_flag_id)?.name || 'None'}
+                        </p>
+                        <p className="text-sm text-slate-300">
+                            Gate: {featureGates.find((gate) => gate.id === formData.feature_gate_id)?.name || 'None'}
+                        </p>
+                    </div>
+                    <div className="card bg-slate-950/60">
+                        <h3 className="mb-2">Health Checks</h3>
+                        {(formData.health_checks || []).length === 0 ? (
+                            <p className="text-sm text-slate-500">No health checks configured.</p>
+                        ) : (
+                            <ul className="space-y-1 text-sm text-slate-300">
+                                {(formData.health_checks || []).map((check, idx) => (
+                                    <li key={idx}>
+                                        {check.metric_name || 'Metric'} ({check.direction}) {check.min ?? '—'} - {check.max ?? '—'}
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
                     </div>
                 </div>
             )}

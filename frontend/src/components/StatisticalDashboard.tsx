@@ -64,6 +64,11 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                     )}
                 </div>
                 <p className="text-slate-400">{experiment.description}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="badge-info">Engine: {experiment.analysis_engine}</span>
+                    <span className="badge-gray">Sampling: {experiment.sampling_method}</span>
+                    <span className="badge-gray">Type: {experiment.experiment_type}</span>
+                </div>
             </div>
 
             {/* Key Metrics Grid */}
@@ -94,7 +99,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                                 <h4 className="text-lg font-semibold text-slate-100">
                                     {result.variant_b} vs {result.variant_a}
                                 </h4>
-                                <SignificanceIndicator pValue={result.p_value} />
+                                <SignificanceIndicator pValue={result.p_value} bayesProbability={result.bayes_probability} />
                             </div>
 
                             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -106,13 +111,19 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                                     </p>
                                 </div>
                                 <div>
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">P-Value</p>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                                        {result.bayes_probability !== undefined ? 'Posterior P' : 'P-Value'}
+                                    </p>
                                     <p className="text-xl font-semibold text-slate-100">
-                                        {formatNumber(result.p_value, 4)}
+                                        {result.bayes_probability !== undefined
+                                            ? formatNumber(result.bayes_probability, 3)
+                                            : formatNumber(result.p_value, 4)}
                                     </p>
                                 </div>
                                 <div className="col-span-2">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">95% Confidence Interval</p>
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                                        {result.bayes_probability !== undefined ? '95% Credible Interval' : '95% Confidence Interval'}
+                                    </p>
                                     <p className="text-xl font-semibold text-slate-100">
                                         [{formatPercent(result.confidence_interval_lower)},{' '}
                                         {formatPercent(result.confidence_interval_upper)}]
@@ -211,6 +222,34 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                 </div>
             </div>
 
+            {analysis.health_checks?.length > 0 && (
+                <div className="card">
+                    <h3 className="mb-4">Health Checks</h3>
+                    <div className="space-y-3">
+                        {analysis.health_checks.map((check, idx) => (
+                            <div key={idx} className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/50 px-4 py-3">
+                                <div>
+                                    <p className="text-sm font-semibold text-slate-100">{check.metric_name}</p>
+                                    <p className="text-xs text-slate-500">
+                                        {check.direction} {check.min ?? '—'} {check.max !== undefined ? `→ ${check.max}` : ''}
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm text-slate-300">
+                                        {check.current_value !== undefined && check.current_value !== null
+                                            ? formatNumber(check.current_value, 3)
+                                            : '—'}
+                                    </p>
+                                    <span className={`badge ${check.is_passing ? 'badge-success' : 'badge-danger'}`}>
+                                        {check.is_passing ? 'Pass' : 'Fail'}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Event Ingestion (Debug/Test) */}
             <div className="card border-dashed border-2 border-slate-800/70 bg-slate-950/60">
                 <h3 className="mb-4 text-slate-200">Test Event Ingestion</h3>
@@ -280,7 +319,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
 
             {/* Hypothesis Summary */}
             {experiment.hypothesis && (
-                <div className="card">
+                <div className="experiment-hypothesis card">
                     <h3 className="mb-3">Hypothesis</h3>
                     <div className="space-y-2">
                         <div>
