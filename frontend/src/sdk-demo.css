@@ -1,0 +1,146 @@
+.demo-shell {
+  min-height: 100vh;
+  background: radial-gradient(circle at top, rgba(45, 212, 191, 0.15), transparent 55%),
+    #0b0b10;
+  color: #e2e8f0;
+  padding: 48px;
+  font-family: "Space Grotesk", "Fira Sans", "Trebuchet MS", sans-serif;
+}
+
+.demo-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.demo-kicker {
+  color: #2dd4bf;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+
+.demo-subtitle {
+  color: #94a3b8;
+  max-width: 520px;
+}
+
+.demo-badge {
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(45, 212, 191, 0.12);
+  color: #2dd4bf;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+}
+
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.demo-card {
+  border-radius: 20px;
+  padding: 20px;
+  background: rgba(12, 12, 16, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 14px;
+}
+
+.demo-card h2 {
+  font-size: 1.1rem;
+  color: #ffffff;
+}
+
+.demo-card label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: #9aa3b2;
+}
+
+.demo-card input {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 10px 12px;
+  background: #0f0f14;
+  color: #e2e8f0;
+}
+
+.demo-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.demo-note {
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.demo-status {
+  display: grid;
+  gap: 12px;
+}
+
+.demo-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: #64748b;
+}
+
+.demo-value {
+  font-size: 1rem;
+  color: #ffffff;
+  margin-top: 4px;
+}
+
+.demo-log {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 12px;
+  padding: 12px;
+  min-height: 140px;
+  font-size: 0.8rem;
+  color: #cbd5f5;
+  overflow-y: auto;
+  max-height: 240px;
+}
+
+.demo-log p {
+  margin: 0 0 8px;
+}
+
+.btn-primary,
+.btn-secondary {
+  border-radius: 999px;
+  padding: 10px 16px;
+  border: none;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #2dd4bf;
+  color: #0b0b10;
+}
+
+.btn-secondary {
+  background: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+@media (max-width: 720px) {
+  .demo-shell {
+    padding: 28px;
+  }
+  .demo-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

@@ -13,6 +13,8 @@ services:
       - SERVER_PORT=8080
       - CLICKHOUSE_URL=http://clickhouse:8123
       - RUST_LOG=info
+      - TRACKING_API_KEY=expothesis-demo-key
+      - SESSION_TTL_MINUTES=30
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -29,6 +31,8 @@ services:
       - "3000:80"
     depends_on:
       - backend
+    environment:
+      - VITE_TRACKING_KEY=expothesis-demo-key
     networks:
       - expothesis-network
     restart: always

@@ -169,6 +169,78 @@ export interface IngestEventRequest {
     attributes?: Record<string, any>;
 }
 
+export interface Session {
+    session_id: string;
+    user_id?: string;
+    entry_url: string;
+    referrer?: string;
+    user_agent?: string;
+    metadata?: Record<string, any>;
+    started_at: string;
+    ended_at?: string;
+    duration_seconds?: number;
+    clicks_count?: number;
+    replay_events_count?: number;
+}
+
+export interface ActivityEvent {
+    event_id: string;
+    session_id: string;
+    user_id?: string;
+    event_name: string;
+    event_type: string;
+    url: string;
+    selector?: string;
+    x?: number;
+    y?: number;
+    metadata?: Record<string, any>;
+    timestamp: string;
+}
+
+export interface StartSessionRequest {
+    session_id?: string;
+    user_id?: string;
+    entry_url: string;
+    referrer?: string;
+    user_agent?: string;
+    metadata?: Record<string, any>;
+}
+
+export interface StartSessionResponse {
+    session_id: string;
+    started_at: string;
+}
+
+export interface EndSessionRequest {
+    session_id: string;
+    ended_at?: string;
+}
+
+export interface TrackEventRequest {
+    session_id: string;
+    user_id?: string;
+    event_name: string;
+    event_type: string;
+    url: string;
+    selector?: string;
+    x?: number;
+    y?: number;
+    metadata?: Record<string, any>;
+    timestamp?: string;
+}
+
+export interface TrackReplayRequest {
+    session_id: string;
+    events: Record<string, any>[];
+}
+
+export interface ListSessionsResponse {
+    sessions: Session[];
+    total: number;
+    limit: number;
+    offset: number;
+}
+
 export interface AssignUserRequest {
     user_id: string;
     experiment_id: string;

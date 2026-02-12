@@ -116,6 +116,74 @@ impl ClickHouseClient {
             .await
             .context("Failed to create metric_events table")?;
 
+        // Sessions table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.sessions (
+                    session_id String,
+                    user_id Nullable(String),
+                    entry_url String,
+                    referrer Nullable(String),
+                    user_agent Nullable(String),
+                    metadata Nullable(String),
+                    started_at DateTime,
+                    ended_at Nullable(DateTime),
+                    duration_seconds Nullable(UInt32),
+                    updated_at DateTime
+                ) ENGINE = ReplacingMergeTree(updated_at)
+                ORDER BY session_id",
+            )
+            .execute()
+            .await
+            .context("Failed to create sessions table")?;
+
+        let session_alters = [
+            "ALTER TABLE expothesis.sessions ADD COLUMN IF NOT EXISTS updated_at DateTime DEFAULT now()",
+        ];
+
+        for alter in session_alters {
+            self.client.query(alter).execute().await?;
+        }
+
+        // Activity events table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.activity_events (
+                    event_id String,
+                    session_id String,
+                    user_id Nullable(String),
+                    event_name String,
+                    event_type String,
+                    url String,
+                    selector Nullable(String),
+                    x Nullable(Float64),
+                    y Nullable(Float64),
+                    metadata Nullable(String),
+                    timestamp DateTime
+                ) ENGINE = MergeTree()
+                PARTITION BY toYYYYMM(timestamp)
+                ORDER BY (session_id, timestamp)",
+            )
+            .execute()
+            .await
+            .context("Failed to create activity_events table")?;
+
+        // Replay events table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.replay_events (
+                    session_id String,
+                    sequence UInt32,
+                    event String,
+                    timestamp DateTime
+                ) ENGINE = MergeTree()
+                PARTITION BY toYYYYMM(timestamp)
+                ORDER BY (session_id, sequence)",
+            )
+            .execute()
+            .await
+            .context("Failed to create replay_events table")?;
+
         // User groups table
         self.client
             .query(

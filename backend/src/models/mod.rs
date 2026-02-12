@@ -133,6 +133,44 @@ pub struct MetricEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    pub session_id: String,
+    pub user_id: Option<String>,
+    pub entry_url: String,
+    pub referrer: Option<String>,
+    pub user_agent: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub started_at: DateTime<Utc>,
+    pub ended_at: Option<DateTime<Utc>>,
+    pub duration_seconds: Option<u32>,
+    pub clicks_count: Option<u64>,
+    pub replay_events_count: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityEvent {
+    pub event_id: Uuid,
+    pub session_id: String,
+    pub user_id: Option<String>,
+    pub event_name: String,
+    pub event_type: String,
+    pub url: String,
+    pub selector: Option<String>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub metadata: Option<serde_json::Value>,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplayEvent {
+    pub session_id: String,
+    pub sequence: u32,
+    pub event: serde_json::Value,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatisticalResult {
     pub experiment_id: Uuid,
     pub variant_a: String,
@@ -253,6 +291,56 @@ pub struct AssignUserRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct StartSessionRequest {
+    pub session_id: Option<String>,
+    pub user_id: Option<String>,
+    pub entry_url: String,
+    pub referrer: Option<String>,
+    pub user_agent: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EndSessionRequest {
+    pub session_id: String,
+    pub ended_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TrackEventRequest {
+    pub session_id: String,
+    pub user_id: Option<String>,
+    pub event_name: String,
+    pub event_type: String,
+    pub url: String,
+    pub selector: Option<String>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub metadata: Option<serde_json::Value>,
+    pub timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TrackReplayRequest {
+    pub session_id: String,
+    pub events: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartSessionResponse {
+    pub session_id: String,
+    pub started_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListSessionsResponse {
+    pub sessions: Vec<Session>,
+    pub total: u64,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateFeatureFlagRequest {
     pub name: String,
     pub description: String,
@@ -297,6 +385,43 @@ pub struct VariantSampleSize {
     pub variant: String,
     pub current_size: usize,
     pub required_size: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
+pub struct SessionRow {
+    pub session_id: String,
+    pub user_id: Option<String>,
+    pub entry_url: String,
+    pub referrer: Option<String>,
+    pub user_agent: Option<String>,
+    pub metadata: Option<String>,
+    pub started_at: u32,
+    pub ended_at: Option<u32>,
+    pub duration_seconds: Option<u32>,
+    pub updated_at: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
+pub struct ActivityEventRow {
+    pub event_id: String,
+    pub session_id: String,
+    pub user_id: Option<String>,
+    pub event_name: String,
+    pub event_type: String,
+    pub url: String,
+    pub selector: Option<String>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub metadata: Option<String>,
+    pub timestamp: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
+pub struct ReplayEventRow {
+    pub session_id: String,
+    pub sequence: u32,
+    pub event: String,
+    pub timestamp: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
