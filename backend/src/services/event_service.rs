@@ -24,6 +24,7 @@ impl EventService {
             variant: req.variant,
             metric_name: req.metric_name,
             metric_value: req.metric_value,
+            attributes: req.attributes.clone(),
             timestamp: Utc::now(),
         };
 
@@ -34,6 +35,7 @@ impl EventService {
             variant: event.variant.clone(),
             metric_name: event.metric_name.clone(),
             metric_value: event.metric_value,
+            attributes: event.attributes.as_ref().map(|value| value.to_string()),
             timestamp: event.timestamp.timestamp() as u32,
         };
 

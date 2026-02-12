@@ -1,3 +1,4 @@
+pub mod analytics_service;
 pub mod event_service;
 pub mod experiment_service;
 pub mod feature_flag_service;
@@ -12,3 +13,4 @@ pub use feature_flag_service::FeatureFlagService;
 pub use feature_gate_service::FeatureGateService;
 pub use tracking_service::TrackingService;
 pub use user_group_service::UserGroupService;
+pub use analytics_service::AnalyticsService;

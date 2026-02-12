@@ -107,6 +107,7 @@ impl ClickHouseClient {
                     variant String,
                     metric_name String,
                     metric_value Float64,
+                    attributes Nullable(String),
                     timestamp DateTime
                 ) ENGINE = MergeTree()
                 PARTITION BY toYYYYMM(timestamp)
@@ -115,6 +116,14 @@ impl ClickHouseClient {
             .execute()
             .await
             .context("Failed to create metric_events table")?;
+
+        let metric_event_alters = [
+            "ALTER TABLE expothesis.metric_events ADD COLUMN IF NOT EXISTS attributes Nullable(String)",
+        ];
+
+        for alter in metric_event_alters {
+            self.client.query(alter).execute().await?;
+        }
 
         // Sessions table
         self.client
@@ -259,6 +268,24 @@ impl ClickHouseClient {
             .execute()
             .await
             .context("Failed to create feature_gates table")?;
+
+        // Analytics alerts table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.analytics_alerts (
+                    id String,
+                    title String,
+                    severity String,
+                    detail String,
+                    experiment_id Nullable(String),
+                    created_at DateTime
+                ) ENGINE = MergeTree()
+                PARTITION BY toYYYYMM(created_at)
+                ORDER BY (created_at, id)",
+            )
+            .execute()
+            .await
+            .context("Failed to create analytics_alerts table")?;
 
         info!("Schema initialization complete");
         Ok(())

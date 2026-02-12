@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod events;
 pub mod experiments;
 pub mod feature_flags;

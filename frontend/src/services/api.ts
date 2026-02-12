@@ -24,6 +24,7 @@ import type {
     TrackEventRequest,
     TrackReplayRequest,
     ListSessionsResponse,
+    AnalyticsOverviewResponse,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -144,6 +145,12 @@ export const trackApi = {
 
     listEvents: (sessionId: string, eventType?: string, limit = 200, signal?: AbortSignal) =>
         api.get<ActivityEvent[]>('/track/events', { params: { session_id: sessionId, event_type: eventType, limit }, headers: trackingHeaders, signal }),
+};
+
+// Analytics
+export const analyticsApi = {
+    getOverview: () =>
+        api.get<AnalyticsOverviewResponse>('/analytics/overview'),
 };
 
 export default api;

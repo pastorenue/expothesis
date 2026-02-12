@@ -12,8 +12,8 @@ use log::info;
 use config::Config;
 use db::ClickHouseClient;
 use services::{
-    EventService, ExperimentService, FeatureFlagService, FeatureGateService, TrackingService,
-    UserGroupService,
+    AnalyticsService, EventService, ExperimentService, FeatureFlagService, FeatureGateService,
+    TrackingService, UserGroupService,
 };
 
 #[actix_web::main]
@@ -46,6 +46,7 @@ async fn main() -> std::io::Result<()> {
     let feature_flag_service = web::Data::new(FeatureFlagService::new(db_with_auth.clone()));
     let feature_gate_service = web::Data::new(FeatureGateService::new(db_with_auth.clone()));
     let event_service = web::Data::new(EventService::new(db_with_auth.clone()));
+    let analytics_service = web::Data::new(AnalyticsService::new(db_with_auth.clone()));
     let tracking_service = web::Data::new(TrackingService::new(db_with_auth.clone(), config.session_ttl_minutes));
     let config_data = web::Data::new(config.clone());
 
@@ -67,11 +68,13 @@ async fn main() -> std::io::Result<()> {
             .app_data(feature_flag_service.clone())
             .app_data(feature_gate_service.clone())
             .app_data(event_service.clone())
+            .app_data(analytics_service.clone())
             .app_data(tracking_service.clone())
             .app_data(config_data.clone())
             .configure(api::experiments::configure)
             .configure(api::user_groups::configure)
             .configure(api::events::configure)
+            .configure(api::analytics::configure)
             .configure(api::feature_flags::configure)
             .configure(api::feature_gates::configure)
             .configure(api::track::configure)
