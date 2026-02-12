@@ -390,6 +390,21 @@ export function SessionReplayPanel() {
             console.warn('Failed to copy session id', error);
         }
     };
+    const handleRemoveFilter = (filter: 'userId' | 'featureGate' | 'status' | 'sessionId') => {
+        setActiveFilters((prev) => prev.filter((item) => item !== filter));
+        if (filter === 'status') {
+            setFilterStatus('all');
+        }
+        if (filter === 'sessionId') {
+            setFilterText('');
+        }
+        if (filter === 'userId') {
+            setUserIdFilter('');
+        }
+        if (filter === 'featureGate') {
+            setFeatureGateFilter('');
+        }
+    };
 
     const handleDebugReplay = async () => {
         if (!debugSessionId.trim()) {
@@ -500,40 +515,76 @@ export function SessionReplayPanel() {
                         </div>
                     </div>
                     {activeFilters.includes('status') && (
-                        <div className="session-filter-group">
-                            {(['all', 'live', 'completed'] as const).map((value) => (
+                        <div className="filter-block">
+                            <div className="filter-block-label">Status</div>
+                            <div className="filter-block-row">
+                                <div className="session-filter-group">
+                                    {(['all', 'live', 'completed'] as const).map((value) => (
+                                        <button
+                                            key={value}
+                                            className={`filter-chip ${filterStatus === value ? 'is-active' : ''}`}
+                                            onClick={() => setFilterStatus(value)}
+                                            type="button"
+                                        >
+                                            {value === 'all' ? 'All' : value === 'live' ? 'Live' : 'Completed'}
+                                        </button>
+                                    ))}
+                                </div>
                                 <button
-                                    key={value}
-                                    className={`filter-chip ${filterStatus === value ? 'is-active' : ''}`}
-                                    onClick={() => setFilterStatus(value)}
                                     type="button"
+                                    className="filter-remove"
+                                    onClick={() => handleRemoveFilter('status')}
+                                    aria-label="Remove status filter"
+                                    title="Remove filter"
                                 >
-                                    {value === 'all' ? 'All' : value === 'live' ? 'Live' : 'Completed'}
+                                    ×
                                 </button>
-                            ))}
+                            </div>
                         </div>
                     )}
                     {activeFilters.includes('sessionId') && (
                         <div className="filter-block">
                             <div className="filter-block-label">Session ID</div>
-                            <input
-                                className="input"
-                                placeholder="Filter by session id"
-                                value={filterText}
-                                onChange={(event) => setFilterText(event.target.value)}
-                            />
+                            <div className="filter-block-row">
+                                <input
+                                    className="input"
+                                    placeholder="Filter by session id"
+                                    value={filterText}
+                                    onChange={(event) => setFilterText(event.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    className="filter-remove"
+                                    onClick={() => handleRemoveFilter('sessionId')}
+                                    aria-label="Remove session id filter"
+                                    title="Remove filter"
+                                >
+                                    ×
+                                </button>
+                            </div>
                         </div>
                     )}
                     {activeFilters.includes('userId') && (
                         <div className="filter-block">
                             <div className="filter-block-label">User ID</div>
-                            <input
-                                className="input"
-                                list="session-user-ids"
-                                placeholder="Filter by user id"
-                                value={userIdFilter}
-                                onChange={(event) => setUserIdFilter(event.target.value)}
-                            />
+                            <div className="filter-block-row">
+                                <input
+                                    className="input"
+                                    list="session-user-ids"
+                                    placeholder="Filter by user id"
+                                    value={userIdFilter}
+                                    onChange={(event) => setUserIdFilter(event.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    className="filter-remove"
+                                    onClick={() => handleRemoveFilter('userId')}
+                                    aria-label="Remove user id filter"
+                                    title="Remove filter"
+                                >
+                                    ×
+                                </button>
+                            </div>
                             <datalist id="session-user-ids">
                                 {userIdOptions.map((value) => (
                                     <option key={value} value={value} />
@@ -544,13 +595,24 @@ export function SessionReplayPanel() {
                     {activeFilters.includes('featureGate') && (
                         <div className="filter-block">
                             <div className="filter-block-label">Feature Gate</div>
-                            <input
-                                className="input"
-                                list="session-feature-gates"
-                                placeholder="Filter by feature gate"
-                                value={featureGateFilter}
-                                onChange={(event) => setFeatureGateFilter(event.target.value)}
-                            />
+                            <div className="filter-block-row">
+                                <input
+                                    className="input"
+                                    list="session-feature-gates"
+                                    placeholder="Filter by feature gate"
+                                    value={featureGateFilter}
+                                    onChange={(event) => setFeatureGateFilter(event.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    className="filter-remove"
+                                    onClick={() => handleRemoveFilter('featureGate')}
+                                    aria-label="Remove feature gate filter"
+                                    title="Remove filter"
+                                >
+                                    ×
+                                </button>
+                            </div>
                             <datalist id="session-feature-gates">
                                 {featureGateOptions.map((value) => (
                                     <option key={value} value={value} />
@@ -611,8 +673,13 @@ export function SessionReplayPanel() {
                     {!filteredSessions.length && <div className="session-empty">No sessions yet.</div>}
                 </div>
                 {hasMoreSessions && (
-                    <button className="btn-secondary session-load-more" onClick={() => loadSessions(false)}>
-                        {isLoadingSessions ? 'Loading...' : 'Load more sessions'}
+                    <button
+                        className="btn-secondary session-load-more"
+                        onClick={() => loadSessions(false)}
+                        disabled={isLoadingSessions}
+                        aria-busy={isLoadingSessions}
+                    >
+                        Load more sessions
                     </button>
                 )}
             </div>
