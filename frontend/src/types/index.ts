@@ -264,6 +264,9 @@ export interface FeatureFlag {
     description: string;
     status: FeatureFlagStatus;
     tags: string[];
+    environment: string;
+    owner: string;
+    user_groups: string[];
     created_at: string;
     updated_at: string;
 }
@@ -286,6 +289,19 @@ export interface CreateFeatureFlagRequest {
     description: string;
     status?: FeatureFlagStatus;
     tags?: string[];
+    environment?: string;
+    owner?: string;
+    user_groups?: string[];
+}
+
+export interface UpdateFeatureFlagRequest {
+    name?: string;
+    description?: string;
+    status?: FeatureFlagStatus;
+    tags?: string[];
+    environment?: string;
+    owner?: string;
+    user_groups?: string[];
 }
 
 export interface CreateFeatureGateRequest {

@@ -12,6 +12,7 @@ import type {
     FeatureFlag,
     FeatureGate,
     CreateFeatureFlagRequest,
+    UpdateFeatureFlagRequest,
     CreateFeatureGateRequest,
     EvaluateFeatureGateRequest,
     FeatureGateEvaluationResponse,
@@ -98,6 +99,12 @@ export const featureFlagApi = {
 
     get: (id: string) =>
         api.get<FeatureFlag>(`/feature-flags/${id}`),
+
+    update: (id: string, data: UpdateFeatureFlagRequest) =>
+        api.put<FeatureFlag>(`/feature-flags/${id}`, data),
+
+    delete: (id: string) =>
+        api.delete<void>(`/feature-flags/${id}`),
 };
 
 // Feature Gates

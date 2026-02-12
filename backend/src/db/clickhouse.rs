@@ -211,6 +211,9 @@ impl ClickHouseClient {
                     description String,
                     status String,
                     tags String,
+                    environment String,
+                    owner String,
+                    user_groups String,
                     created_at DateTime,
                     updated_at DateTime
                 ) ENGINE = ReplacingMergeTree(updated_at)
@@ -219,6 +222,22 @@ impl ClickHouseClient {
             .execute()
             .await
             .context("Failed to create feature_flags table")?;
+
+        self.client
+            .query("ALTER TABLE expothesis.feature_flags ADD COLUMN IF NOT EXISTS environment String DEFAULT ''")
+            .execute()
+            .await
+            .context("Failed to alter feature_flags table (environment)")?;
+        self.client
+            .query("ALTER TABLE expothesis.feature_flags ADD COLUMN IF NOT EXISTS owner String DEFAULT ''")
+            .execute()
+            .await
+            .context("Failed to alter feature_flags table (owner)")?;
+        self.client
+            .query("ALTER TABLE expothesis.feature_flags ADD COLUMN IF NOT EXISTS user_groups String DEFAULT '[]'")
+            .execute()
+            .await
+            .context("Failed to alter feature_flags table (user_groups)")?;
 
         // Feature gates table
         self.client

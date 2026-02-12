@@ -9,7 +9,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         web::scope("/api/feature-flags")
             .route("", web::post().to(create_flag))
             .route("", web::get().to(list_flags))
-            .route("/{id}", web::get().to(get_flag)),
+            .route("/{id}", web::get().to(get_flag))
+            .route("/{id}", web::put().to(update_flag))
+            .route("/{id}", web::delete().to(delete_flag)),
     );
 }
 
@@ -41,6 +43,31 @@ async fn get_flag(
     match service.get_flag(id.into_inner()).await {
         Ok(flag) => HttpResponse::Ok().json(flag),
         Err(e) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn update_flag(
+    service: web::Data<FeatureFlagService>,
+    id: web::Path<Uuid>,
+    req: web::Json<UpdateFeatureFlagRequest>,
+) -> impl Responder {
+    match service.update_flag(id.into_inner(), req.into_inner()).await {
+        Ok(flag) => HttpResponse::Ok().json(flag),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn delete_flag(
+    service: web::Data<FeatureFlagService>,
+    id: web::Path<Uuid>,
+) -> impl Responder {
+    match service.delete_flag(id.into_inner()).await {
+        Ok(()) => HttpResponse::NoContent().finish(),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
         })),
     }

@@ -214,6 +214,9 @@ pub struct FeatureFlag {
     pub description: String,
     pub status: FeatureFlagStatus,
     pub tags: Vec<String>,
+    pub environment: String,
+    pub owner: String,
+    pub user_groups: Vec<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -346,6 +349,20 @@ pub struct CreateFeatureFlagRequest {
     pub description: String,
     pub status: Option<FeatureFlagStatus>,
     pub tags: Option<Vec<String>>,
+    pub environment: Option<String>,
+    pub owner: Option<String>,
+    pub user_groups: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFeatureFlagRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<FeatureFlagStatus>,
+    pub tags: Option<Vec<String>>,
+    pub environment: Option<String>,
+    pub owner: Option<String>,
+    pub user_groups: Option<Vec<Uuid>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -500,6 +517,9 @@ pub struct FeatureFlagRow {
     pub description: String,
     pub status: String,
     pub tags: String,
+    pub environment: String,
+    pub owner: String,
+    pub user_groups: String,
     pub created_at: u32,
     pub updated_at: u32,
 }
