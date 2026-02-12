@@ -22,7 +22,7 @@ const nodeColorByKind: Record<FlowNode['kind'], { border: string; badge: string 
 };
 
 const nodeBadgeClass = (kind: FlowNode['kind']) =>
-    `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[0.5rem] font-semibold uppercase tracking-[0.18em] ${nodeColorByKind[kind].badge}`;
+    `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[0.6rem] font-semibold title tracking-[0.18em] ${nodeColorByKind[kind].badge}`;
 
 type FlowNode = {
     id: string;
@@ -47,7 +47,7 @@ const NODE_WIDTH = 176;
 const NODE_HEIGHT = 72;
 const HANDLE_CENTER_OFFSET = 10;
 
-export const FlowStudio: React.FC = () => {
+export const SimulationStudio: React.FC = () => {
     const { data: experiments = [] } = useQuery({
         queryKey: ['experiments'],
         queryFn: async () => {
@@ -912,7 +912,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         <div className="flow-studio space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h1>Flow Studio</h1>
+                    <h1>Simulation Studio</h1>
                     <p className="mt-1 text-slate-400">
                         Orchestrate experiments, audiences, and hypotheses in a connected action canvas.
                     </p>
@@ -925,7 +925,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                 <div className="relative">
                     <div className="flow-surface mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs text-slate-300">
                         <div className="flex items-center gap-3">
-                            <span className="text-[0.6rem] font-semibold uppercase tracking-[0.2em] text-slate-500">Flow Config</span>
+                            <span className="text-[0.6rem] font-bold title tracking-[0.2em] text-slate-200">Simulation Config:</span>
                             <button
                                 className="btn-secondary"
                                 onClick={() =>
@@ -974,7 +974,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             setEdges(normalized.edges);
                                             setImportError(null);
                                         } catch (error: any) {
-                                            setImportError(error?.message || 'Failed to load flow configuration.');
+                                            setImportError(error?.message || 'Failed to load configuration.');
                                         }
                                     };
                                     reader.readAsText(file);
@@ -1001,7 +1001,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                         setEdges(normalized.edges);
                                         setImportError(null);
                                     } catch (error: any) {
-                                        setImportError(error?.message || 'Failed to load flow configuration.');
+                                        setImportError(error?.message || 'Failed to load configuration.');
                                     }
                                 }}
                             >
@@ -1016,7 +1016,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.2fr_1.2fr_1.2fr_1.2fr]">
                                 <details className="panel" open>
                                     <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
-                                        Triggers
+                                      Anchors
                                     </summary>
                                     <div className="mt-3 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto pr-1">
                                         <button
@@ -1044,7 +1044,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                         {experiments.map((exp) => (
                                             <button
                                                 key={exp.id}
-                                                className={`${nodeBadgeClass('experiment')} w-full text-left`}
+                                                className={`${nodeBadgeClass('experiment')} w-full text-center`}
                                                 onClick={() =>
                                                     createNode({
                                                         kind: 'experiment',
@@ -1148,7 +1148,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     Clear Canvas
                                 </button>
                                 <span className={isFlowReady ? 'text-emerald-300' : 'text-amber-300'}>
-                                    {isFlowReady ? 'Flow Ready' : 'Connect required inputs'}
+                                    {isFlowReady ? 'Simulation Ready' : 'Connect required inputs'}
                                 </span>
                             </div>
                         </div>
@@ -1253,7 +1253,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             key={`${edge.from}-${edge.to}`}
                                             d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
                                             stroke="rgba(16,185,129,0.6)"
-                                            strokeWidth="2.5"
+                                            strokeWidth="1.5"
                                             vectorEffect="non-scaling-stroke"
                                             fill="none"
                                             className={isActiveEdge ? 'flow-line' : ''}
@@ -1271,7 +1271,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             <path
                                                 d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${cursor.y}, ${cursor.x} ${cursor.y}`}
                                                 stroke="rgba(56,189,248,0.6)"
-                                                strokeWidth="2.5"
+                                                strokeWidth="1.5"
                                                 vectorEffect="non-scaling-stroke"
                                                 fill="none"
                                                 strokeDasharray="6 6"
@@ -1388,7 +1388,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                             </button>
                                         </div>
                                     )}
-                                    <div className="mt-2 flex items-center justify-between text-[0.6rem] uppercase tracking-[0.2em] text-slate-500">
+                                    <div className="mt-2 flex items-center justify-between text-[0.66rem] title tracking-[0.2em] text-slate-500">
                                         <span>{node.kind.replace('-', ' ')}</span>
                                         <span>{pendingFrom === node.id ? 'link' : ''}</span>
                                     </div>
@@ -1446,19 +1446,19 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                             </div>
                         </div>
                         <div className="simulation-output flow-surface mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-                            <div className="mb-3 flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
+                            <div className="mb-3 flex items-center justify-between text-xs title tracking-[0.2em] text-slate-500">
                                 <span>Simulation Output</span>
                                 <span
                                     className={
                                         isSimulating ? 'text-emerald-300' : isPaused ? 'text-amber-300' : 'text-slate-500'
                                     }
                                 >
-                                    {isSimulating ? 'Running' : isPaused ? 'Paused' : 'Idle'}
+                                    {isSimulating ? 'Running' : isPaused ? 'Paused' : ''}
                                 </span>
                             </div>
                             <div className="relative mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-300">
                                 <div className="flex items-center gap-2">
-                                    <span className="uppercase tracking-[0.2em] text-slate-500">From</span>
+                                    <span className="title tracking-[0.2em] text-slate-500">From</span>
                                     <button
                                         ref={startRef}
                                         className="flow-pill rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
@@ -1472,7 +1472,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                     </button>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="uppercase tracking-[0.2em] text-slate-500">To</span>
+                                    <span className="title tracking-[0.2em] text-slate-500">To</span>
                                     <button
                                         ref={endRef}
                                         className="flow-pill rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
@@ -1744,12 +1744,12 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                 </div>
             </div>
 
-            <div className="h-px w-full bg-slate-800/70"></div>
+            <div className="h-px w-full bg-slate-300/70"></div>
             <details className="panel" open>
                 <summary className="cursor-pointer text-base font-bold text-slate-200">Simulation Details</summary>
                 <div className="mt-4 grid grid-cols-1 gap-6 text-[0.85rem] lg:grid-cols-[1.4fr_1fr_1fr]">
                 <div className="card">
-                    <h3 className="mb-4">Live Flow Results</h3>
+                    <h3 className="mb-4">Live Simulation Results</h3>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         {[
                             { label: 'Active Experiments', value: experiments.filter((exp) => exp.status === 'running').length.toString() },

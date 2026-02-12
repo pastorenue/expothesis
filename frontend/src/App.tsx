@@ -6,7 +6,7 @@ import { ExperimentCreator } from './components/ExperimentCreator';
 import { ExperimentMonitor } from './components/ExperimentMonitor';
 import { StatisticalDashboard } from './components/StatisticalDashboard';
 import { UserGroupManager } from './components/UserGroupManager';
-import { FlowStudio } from './components/FlowStudio';
+import { SimulationStudio } from './components/SimulationStudio';
 import { FeatureFlagManager } from './components/FeatureFlagManager';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import type { CreateExperimentRequest } from './types';
@@ -200,21 +200,21 @@ function HomePage() {
                                 <div className="flex items-center gap-2">
                                     {(exp.status === 'draft' || exp.status === 'paused') && (
                                         <button
-                                            className="btn-secondary h-9 w-9 p-0"
+                                            className="btn-secondary h-7 w-7 p-0"
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 startMutation.mutate(exp.id);
                                             }}
                                             aria-label="Start experiment"
                                         >
-                                            <svg viewBox="0 0 24 24" className="mx-auto h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <svg viewBox="0 0 24 24" className="mx-auto h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 5l11 7-11 7V5z" />
                                             </svg>
                                         </button>
                                     )}
                                     {exp.status === 'running' && (
                                         <button
-                                            className="btn-secondary h-9 w-9 p-0 relative"
+                                            className="btn-secondary h-7 w-7 p-0 relative"
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 pauseMutation.mutate(exp.id);
@@ -224,21 +224,21 @@ function HomePage() {
                                             <span className="absolute inset-0 flex items-center justify-center">
                                                 <span className="absolute h-6 w-6 animate-ping rounded-full bg-emerald-400/25"></span>
                                             </span>
-                                            <svg viewBox="0 0 24 24" className="mx-auto h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <svg viewBox="0 0 24 24" className="mx-auto h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3">
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M10 6v12m4-12v12" />
                                             </svg>
                                         </button>
                                     )}
                                     {exp.status !== 'stopped' && (
                                         <button
-                                            className="btn-secondary h-9 w-9 p-0"
+                                            className="btn-secondary h-7 w-7 p-0"
                                             onClick={(event) => {
                                                 event.stopPropagation();
                                                 stopMutation.mutate(exp.id);
                                             }}
                                             aria-label="Stop experiment"
                                         >
-                                            <svg viewBox="0 0 24 24" className="mx-auto h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                            <svg viewBox="0 0 24 24" className="mx-auto h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
                                                 <rect x="6" y="6" width="12" height="12" rx="1.5" />
                                             </svg>
                                         </button>
@@ -374,7 +374,7 @@ function LandingPage() {
                         Map, simulate, and activate experiments as living systems.
                     </h1>
                     <p className="landing-subtitle">
-                        Bring your product strategy to life with 3D flow orchestration, intelligent gates, and
+                        Bring your product strategy to life with experimentation orchestration, intelligent gates, and
                         real-time analytics that feel like an operations command center.
                     </p>
                     <div className="landing-hero-actions">
@@ -459,7 +459,7 @@ function LandingPage() {
                 <div className="landing-grid">
                     {[
                         {
-                            title: '3D Flow Studio',
+                            title: 'Simulation Studio',
                             body: 'Animate your experimentation pipelines with drag-and-drop sequencing, live simulation, and signal paths.',
                         },
                         {
@@ -484,7 +484,7 @@ function LandingPage() {
                 <div className="landing-callout">
                     <div>
                         <h2>Command the lifecycle of every experiment.</h2>
-                        <p>Step into the dashboard and launch your first flow.</p>
+                        <p>Step into the dashboard and launch your first simulation.</p>
                     </div>
                     <Link to="/dashboard" className="btn-primary">
                         Enter Dashboard
@@ -520,8 +520,8 @@ function Layout({ children }: { children: React.ReactNode }) {
             ),
         },
         {
-            to: '/flow-studio',
-            label: 'Flow Studio',
+            to: '/simulation-studio',
+            label: 'Simulation Studio',
             icon: (
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h6v6H6zM12 12h6v6h-6zM12 6h6v6h-6zM6 12h6v6H6z" />
@@ -543,8 +543,8 @@ function Layout({ children }: { children: React.ReactNode }) {
         ? 'Experiment Control'
         : location.pathname.startsWith('/user-groups')
             ? 'User Segments'
-            : location.pathname.startsWith('/flow-studio')
-                ? 'Flow Studio'
+            : location.pathname.startsWith('/simulation-studio')
+                ? 'Simulation Studio'
             : location.pathname.startsWith('/feature-flags')
                 ? 'Feature Flags'
             : location.pathname.startsWith('/dashboard')
@@ -710,7 +710,7 @@ function App() {
                         <Route path="/dashboard" element={<HomePage />} />
                         <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
                         <Route path="/user-groups" element={<UserGroupManager />} />
-                        <Route path="/flow-studio" element={<FlowStudio />} />
+                        <Route path="/simulation-studio" element={<SimulationStudio />} />
                         <Route path="/feature-flags" element={<FeatureFlagManager />} />
                     </Routes>
                 </Layout>

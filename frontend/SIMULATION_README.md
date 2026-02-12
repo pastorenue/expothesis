@@ -1,4 +1,4 @@
-# Flow Studio Quickstart
+# Simulation Studio Quickstart
 
 This guide explains how to run and test the Flow Studio UI.
 
@@ -20,7 +20,7 @@ Notes:
 - The Compose override runs the frontend in dev mode (Vite) on port 3001.
 - The backend API is available at http://localhost:8080.
 
-## Build a valid flow
+## Build a valid Simulation
 
 Connections are enforced in this order:
 
