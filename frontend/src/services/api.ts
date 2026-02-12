@@ -12,6 +12,7 @@ import type {
     FeatureFlag,
     FeatureGate,
     CreateFeatureFlagRequest,
+    UpdateFeatureFlagRequest,
     CreateFeatureGateRequest,
     EvaluateFeatureGateRequest,
     FeatureGateEvaluationResponse,
@@ -23,6 +24,7 @@ import type {
     TrackEventRequest,
     TrackReplayRequest,
     ListSessionsResponse,
+    AnalyticsOverviewResponse,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -98,6 +100,12 @@ export const featureFlagApi = {
 
     get: (id: string) =>
         api.get<FeatureFlag>(`/feature-flags/${id}`),
+
+    update: (id: string, data: UpdateFeatureFlagRequest) =>
+        api.put<FeatureFlag>(`/feature-flags/${id}`, data),
+
+    delete: (id: string) =>
+        api.delete<void>(`/feature-flags/${id}`),
 };
 
 // Feature Gates
@@ -137,6 +145,12 @@ export const trackApi = {
 
     listEvents: (sessionId: string, eventType?: string, limit = 200, signal?: AbortSignal) =>
         api.get<ActivityEvent[]>('/track/events', { params: { session_id: sessionId, event_type: eventType, limit }, headers: trackingHeaders, signal }),
+};
+
+// Analytics
+export const analyticsApi = {
+    getOverview: () =>
+        api.get<AnalyticsOverviewResponse>('/analytics/overview'),
 };
 
 export default api;

@@ -9,6 +9,7 @@ import { UserGroupManager } from './components/UserGroupManager';
 import { SimulationStudio } from './components/SimulationStudio';
 import { FeatureFlagManager } from './components/FeatureFlagManager';
 import { SessionReplayPanel } from './components/SessionReplayPanel';
+import { AnalyticsMonitoringDashboard } from './components/AnalyticsMonitoringDashboard';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import type { CreateExperimentRequest } from './types';
 import { ExpothesisTracker } from './sdk/expothesis';
@@ -539,6 +540,15 @@ function Layout({ children }: { children: React.ReactNode }) {
             ),
         },
         {
+            to: '/analytics',
+            label: 'Analytics & Monitoring',
+            icon: (
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5m5 14V9m5 10V7m5 12V11" />
+                </svg>
+            ),
+        },
+        {
             to: '/user-groups',
             label: 'User Groups',
             icon: (
@@ -586,6 +596,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                 ? 'Feature Flags'
             : location.pathname.startsWith('/sessions')
                 ? 'Sessions'
+            : location.pathname.startsWith('/analytics')
+                ? 'Analytics & Monitoring'
             : location.pathname.startsWith('/dashboard')
                 ? 'Experiment Dashboard'
             : 'Experiment Dashboard';
@@ -749,6 +761,7 @@ function App() {
                         <Route path="/dashboard" element={<HomePage />} />
                         <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
                         <Route path="/user-groups" element={<UserGroupManager />} />
+                        <Route path="/analytics" element={<AnalyticsMonitoringDashboard />} />
                         <Route path="/simulation-studio" element={<SimulationStudio />} />
                         <Route path="/feature-flags" element={<FeatureFlagManager />} />
                         <Route

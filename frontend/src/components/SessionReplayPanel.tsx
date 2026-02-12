@@ -661,7 +661,12 @@ export function SessionReplayPanel() {
                                 <span className="session-divider">•</span>
                                 <span className="session-meta-icon" aria-hidden="true">
                                     <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.8">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 3l10 8-6 2-2 6-2-16z" />
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M12 4a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V8a4 4 0 0 1 4-4z"
+                                        />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v3" />
                                     </svg>
                                 </span>
                                 <span>{session.clicks_count ?? 0} clicks</span>

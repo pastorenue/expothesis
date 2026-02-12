@@ -264,6 +264,9 @@ export interface FeatureFlag {
     description: string;
     status: FeatureFlagStatus;
     tags: string[];
+    environment: string;
+    owner: string;
+    user_groups: string[];
     created_at: string;
     updated_at: string;
 }
@@ -286,6 +289,19 @@ export interface CreateFeatureFlagRequest {
     description: string;
     status?: FeatureFlagStatus;
     tags?: string[];
+    environment?: string;
+    owner?: string;
+    user_groups?: string[];
+}
+
+export interface UpdateFeatureFlagRequest {
+    name?: string;
+    description?: string;
+    status?: FeatureFlagStatus;
+    tags?: string[];
+    environment?: string;
+    owner?: string;
+    user_groups?: string[];
 }
 
 export interface CreateFeatureGateRequest {
@@ -316,5 +332,126 @@ export interface MetricEvent {
     variant: string;
     metric_name: string;
     metric_value: number;
+    attributes?: Record<string, any>;
     timestamp: string;
+}
+
+export interface AnalyticsSummary {
+    active_experiments: number;
+    active_experiments_delta: number;
+    daily_exposures: number;
+    exposures_delta_percent: number;
+    primary_conversion_rate: number;
+    primary_conversion_delta_pp: number;
+    guardrail_breaches: number;
+    guardrail_breaches_detail: string;
+    environment: string;
+    data_freshness_seconds: number;
+    last_updated: string;
+}
+
+export interface AnalyticsThroughputPoint {
+    time: string;
+    exposures: number;
+    assignments: number;
+    conversions: number;
+}
+
+export interface AnalyticsMetricCoverageSlice {
+    name: string;
+    value: number;
+}
+
+export interface AnalyticsMetricCoverageTotals {
+    total_metrics: number;
+    guardrails: number;
+    diagnostics: number;
+    holdout_metrics: number;
+}
+
+export interface AnalyticsPrimaryMetricPoint {
+    day: string;
+    conversion: number;
+    revenue: number;
+    retention: number;
+}
+
+export interface AnalyticsGuardrailPoint {
+    day: string;
+    latency: number;
+    error_rate: number;
+    crash_rate: number;
+}
+
+export interface AnalyticsSrmVariant {
+    variant: string;
+    expected: number;
+    observed: number;
+}
+
+export interface AnalyticsSrmSummary {
+    p_value: number;
+    allocation_drift: number;
+    experiment_id?: string;
+    experiment_name?: string;
+}
+
+export interface AnalyticsSrmResponse {
+    variants: AnalyticsSrmVariant[];
+    summary: AnalyticsSrmSummary;
+}
+
+export interface AnalyticsFunnelStep {
+    step: string;
+    users: number;
+}
+
+export interface AnalyticsAnomalyPoint {
+    day: string;
+    critical: number;
+    warning: number;
+    info: number;
+}
+
+export interface AnalyticsSegmentLiftPoint {
+    segment: string;
+    lift: number;
+}
+
+export interface AnalyticsMetricInventoryItem {
+    name: string;
+    category: string;
+    freshness_seconds: number;
+    owner: string;
+    status: string;
+    guardrail?: string;
+}
+
+export interface AnalyticsAlertItem {
+    title: string;
+    time: string;
+    severity: string;
+    detail: string;
+}
+
+export interface AnalyticsSystemHealth {
+    data_freshness_seconds: number;
+    sdk_error_rate: number;
+    evaluation_latency_ms: number;
+}
+
+export interface AnalyticsOverviewResponse {
+    summary: AnalyticsSummary;
+    throughput: AnalyticsThroughputPoint[];
+    metric_coverage: AnalyticsMetricCoverageSlice[];
+    metric_coverage_totals: AnalyticsMetricCoverageTotals;
+    primary_metric_trend: AnalyticsPrimaryMetricPoint[];
+    guardrail_health: AnalyticsGuardrailPoint[];
+    srm: AnalyticsSrmResponse;
+    funnel: AnalyticsFunnelStep[];
+    anomaly_alerts: AnalyticsAnomalyPoint[];
+    segment_lift: AnalyticsSegmentLiftPoint[];
+    metric_inventory: AnalyticsMetricInventoryItem[];
+    alert_feed: AnalyticsAlertItem[];
+    system_health: AnalyticsSystemHealth;
 }
