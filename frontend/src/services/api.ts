@@ -15,6 +15,14 @@ import type {
     CreateFeatureGateRequest,
     EvaluateFeatureGateRequest,
     FeatureGateEvaluationResponse,
+    Session,
+    ActivityEvent,
+    StartSessionRequest,
+    StartSessionResponse,
+    EndSessionRequest,
+    TrackEventRequest,
+    TrackReplayRequest,
+    ListSessionsResponse,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -25,6 +33,9 @@ const api = axios.create({
         'Content-Type': 'application/json',
     },
 });
+
+const TRACKING_KEY = import.meta.env.VITE_TRACKING_KEY;
+const trackingHeaders = TRACKING_KEY ? { 'x-expothesis-key': TRACKING_KEY } : undefined;
 
 // Experiments
 export const experimentApi = {
@@ -102,6 +113,30 @@ export const featureGateApi = {
 
     evaluate: (id: string, data: EvaluateFeatureGateRequest) =>
         api.post<FeatureGateEvaluationResponse>(`/feature-gates/${id}/evaluate`, data),
+};
+
+// Tracking
+export const trackApi = {
+    startSession: (data: StartSessionRequest) =>
+        api.post<StartSessionResponse>('/track/session/start', data, { headers: trackingHeaders }),
+
+    endSession: (data: EndSessionRequest) =>
+        api.post<Session>('/track/session/end', data, { headers: trackingHeaders }),
+
+    trackEvent: (data: TrackEventRequest) =>
+        api.post<ActivityEvent>('/track/event', data, { headers: trackingHeaders }),
+
+    trackReplay: (data: TrackReplayRequest) =>
+        api.post('/track/replay', data, { headers: trackingHeaders }),
+
+    listSessions: (limit = 20, offset = 0, signal?: AbortSignal) =>
+        api.get<ListSessionsResponse>('/track/sessions', { params: { limit, offset }, headers: trackingHeaders, signal }),
+
+    getReplay: (sessionId: string, limit = 1200, offset = 0, signal?: AbortSignal) =>
+        api.get<Record<string, any>[]>(`/track/replay/${sessionId}`, { params: { limit, offset }, headers: trackingHeaders, signal }),
+
+    listEvents: (sessionId: string, eventType?: string, limit = 200, signal?: AbortSignal) =>
+        api.get<ActivityEvent[]>('/track/events', { params: { session_id: sessionId, event_type: eventType, limit }, headers: trackingHeaders, signal }),
 };
 
 export default api;

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Expothesis SDK Demo</title>
+  </head>
+  <body>
+    <main class="demo-shell">
+      <header class="demo-header">
+        <div>
+          <p class="demo-kicker">Expothesis SDK</p>
+          <h1>Non-React Client Demo</h1>
+          <p class="demo-subtitle">Standalone page to test session tracking, events, and replay capture.</p>
+        </div>
+        <div class="demo-badge">SDK READY</div>
+      </header>
+
+      <section class="demo-grid">
+        <div class="demo-card">
+          <h2>Connection</h2>
+          <label>
+            Endpoint
+            <input id="endpoint" type="text" value="/api/track" />
+          </label>
+          <label>
+            API Key
+            <input id="apiKey" type="text" placeholder="Optional" />
+          </label>
+          <label>
+            User ID
+            <input id="userId" type="text" placeholder="user-123" />
+          </label>
+          <div class="demo-actions">
+            <button id="startSession" class="btn-primary">Start Session</button>
+            <button id="endSession" class="btn-secondary">End Session</button>
+          </div>
+        </div>
+
+        <div class="demo-card">
+          <h2>Event Controls</h2>
+          <div class="demo-actions">
+            <button id="ctaClick" class="btn-primary">Track CTA Click</button>
+            <button id="featureToggle" class="btn-secondary">Track Feature Toggle</button>
+          </div>
+          <div class="demo-actions">
+            <button id="pageStep" class="btn-secondary">Track Page Step</button>
+          </div>
+          <p class="demo-note">Use these buttons to emit custom events and verify ingest + replay.</p>
+        </div>
+
+        <div class="demo-card">
+          <h2>Session Status</h2>
+          <div class="demo-status">
+            <div>
+              <span class="demo-label">Session ID</span>
+              <div id="sessionId" class="demo-value">—</div>
+            </div>
+            <div>
+              <span class="demo-label">State</span>
+              <div id="sessionState" class="demo-value">Idle</div>
+            </div>
+          </div>
+          <div class="demo-log" id="eventLog"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/sdk-demo.ts"></script>
+  </body>
+</html>

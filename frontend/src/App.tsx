@@ -8,8 +8,10 @@ import { StatisticalDashboard } from './components/StatisticalDashboard';
 import { UserGroupManager } from './components/UserGroupManager';
 import { SimulationStudio } from './components/SimulationStudio';
 import { FeatureFlagManager } from './components/FeatureFlagManager';
+import { SessionReplayPanel } from './components/SessionReplayPanel';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import type { CreateExperimentRequest } from './types';
+import { ExpothesisTracker } from './sdk/expothesis';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -347,6 +349,32 @@ function ExperimentDetailPage() {
 }
 
 function LandingPage() {
+    const trackerRef = React.useRef<ExpothesisTracker | null>(null);
+    const trackerStarted = React.useRef(false);
+
+    React.useEffect(() => {
+        if (trackerStarted.current) {
+            return;
+        }
+        trackerStarted.current = true;
+        const tracker = new ExpothesisTracker({
+            autoTrack: true,
+            recordReplay: true,
+            apiKey: import.meta.env.VITE_TRACKING_KEY,
+            replayBatchSize: 40,
+            replaySnapshotGraceMs: 5000,
+            autoEndOnRouteChange: false,
+            autoRestartOnRouteChange: false,
+        });
+        tracker.init();
+        trackerRef.current = tracker;
+
+        return () => {
+            tracker.end();
+            trackerStarted.current = false;
+        };
+    }, []);
+
     return (
         <div className="landing-page">
             <header className="landing-header">
@@ -537,6 +565,15 @@ function Layout({ children }: { children: React.ReactNode }) {
                 </svg>
             ),
         },
+        {
+            to: '/sessions',
+            label: 'Sessions',
+            icon: (
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h10M4 18h7" />
+                </svg>
+            ),
+        },
     ];
 
     const pageTitle = location.pathname.startsWith('/experiment/')
@@ -547,6 +584,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                 ? 'Simulation Studio'
             : location.pathname.startsWith('/feature-flags')
                 ? 'Feature Flags'
+            : location.pathname.startsWith('/sessions')
+                ? 'Sessions'
             : location.pathname.startsWith('/dashboard')
                 ? 'Experiment Dashboard'
             : 'Experiment Dashboard';
@@ -712,6 +751,20 @@ function App() {
                         <Route path="/user-groups" element={<UserGroupManager />} />
                         <Route path="/simulation-studio" element={<SimulationStudio />} />
                         <Route path="/feature-flags" element={<FeatureFlagManager />} />
+                        <Route
+                            path="/sessions"
+                            element={
+                                <div className="space-y-6">
+                                    <div>
+                                        <h1>Session Replay</h1>
+                                        <p className="mt-1 text-slate-400">
+                                            Review session replays, heatmaps, and live activity.
+                                        </p>
+                                    </div>
+                                    <SessionReplayPanel />
+                                </div>
+                            }
+                        />
                     </Routes>
                 </Layout>
             </BrowserRouter>
