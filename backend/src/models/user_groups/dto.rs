@@ -9,6 +9,13 @@ pub struct CreateUserGroupRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateUserGroupRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub assignment_rule: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MoveUserGroupRequest {
     pub from_experiment_id: Uuid,
     pub to_experiment_id: Uuid,
