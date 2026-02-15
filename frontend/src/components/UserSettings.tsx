@@ -1,12 +1,17 @@
 import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { sdkApi } from '../services/api';
-import type { RotateSdkTokensRequest } from '../types';
+import { authApi, sdkApi } from '../services/api';
+import type { RotateSdkTokensRequest, TotpSetupResponse } from '../types';
 
 export const UserSettings: React.FC = () => {
     const queryClient = useQueryClient();
     const [pendingRotate, setPendingRotate] = React.useState<RotateSdkTokensRequest['kind'] | null>(null);
     const [copiedKey, setCopiedKey] = React.useState<'tracking' | 'feature_flags' | null>(null);
+    const [totpSetup, setTotpSetup] = React.useState<TotpSetupResponse | null>(null);
+    const [totpCode, setTotpCode] = React.useState('');
+    const [totpEnabled, setTotpEnabled] = React.useState(false);
+    const [totpError, setTotpError] = React.useState<string | null>(null);
+    const [totpSuccess, setTotpSuccess] = React.useState<string | null>(null);
     const { data, isLoading } = useQuery({
         queryKey: ['sdk-tokens'],
         queryFn: async () => {
@@ -23,6 +28,7 @@ export const UserSettings: React.FC = () => {
 
     const trackingKey = data?.tracking_api_key ?? '—';
     const featureFlagsKey = data?.feature_flags_api_key ?? '—';
+    const userId = window.localStorage.getItem('expothesis-user-id') ?? '';
 
     const handleCopy = async (value: string, kind: 'tracking' | 'feature_flags') => {
         if (!value || value === '—') return;
@@ -32,6 +38,44 @@ export const UserSettings: React.FC = () => {
             window.setTimeout(() => setCopiedKey((current) => (current === kind ? null : current)), 1500);
         } catch {
             // Silently ignore clipboard failures.
+        }
+    };
+
+    const handleTotpSetup = async () => {
+        setTotpError(null);
+        setTotpSuccess(null);
+        if (!userId) {
+            setTotpError('Missing user session. Please sign in again.');
+            return;
+        }
+        try {
+            const res = await authApi.setupTotp(userId);
+            setTotpSetup(res.data);
+        } catch (err: unknown) {
+            const error = err as { response?: { data?: { error?: string } } };
+            setTotpError(error.response?.data?.error || 'Failed to start authenticator setup');
+        }
+    };
+
+    const handleTotpVerify = async () => {
+        setTotpError(null);
+        setTotpSuccess(null);
+        if (!userId) {
+            setTotpError('Missing user session. Please sign in again.');
+            return;
+        }
+        if (!totpCode.trim()) {
+            setTotpError('Enter the 6-digit code from your authenticator app.');
+            return;
+        }
+        try {
+            await authApi.verifyTotp(userId, totpCode.trim());
+            setTotpEnabled(true);
+            setTotpSuccess('Authenticator enabled.');
+            setTotpCode('');
+        } catch (err: unknown) {
+            const error = err as { response?: { data?: { error?: string } } };
+            setTotpError(error.response?.data?.error || 'Verification failed');
         }
     };
 
@@ -66,10 +110,54 @@ export const UserSettings: React.FC = () => {
                         <div className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 text-sm">
                             <div>
                                 <p className="font-semibold text-slate-100">Authenticator app</p>
-                                <p className="text-xs text-slate-500">Enabled</p>
+                                <p className="text-xs text-slate-500">{totpEnabled ? 'Enabled' : 'Not configured'}</p>
                             </div>
-                            <button className="btn-secondary">Manage</button>
+                            <button className="btn-secondary" onClick={handleTotpSetup}>
+                                {totpSetup ? 'Regenerate' : 'Set up'}
+                            </button>
                         </div>
+                        {totpSetup && (
+                            <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-4 text-sm text-slate-300">
+                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Scan QR</p>
+                                <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-center">
+                                    <div className="flex h-36 w-36 items-center justify-center rounded-xl border border-slate-800/70 bg-slate-950/70">
+                                        <img
+                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(
+                                                totpSetup.otpauth_url,
+                                            )}`}
+                                            alt="Authenticator QR"
+                                            className="h-32 w-32 rounded-lg"
+                                        />
+                                    </div>
+                                    <div className="flex-1 space-y-2">
+                                        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Secret</div>
+                                        <div className="rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-xs text-slate-200">
+                                            {totpSetup.secret}
+                                        </div>
+                                        <div className="text-xs uppercase tracking-[0.2em] text-slate-500">OTPAuth URL</div>
+                                        <div className="rounded-lg border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-[0.65rem] text-slate-300">
+                                            {totpSetup.otpauth_url}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-4 space-y-2">
+                                    <label className="label">Enter code to verify</label>
+                                    <input
+                                        className="input"
+                                        value={totpCode}
+                                        onChange={(e) => setTotpCode(e.target.value)}
+                                        placeholder="123456"
+                                    />
+                                    <div className="flex items-center gap-2">
+                                        <button className="btn-primary" onClick={handleTotpVerify}>
+                                            Verify Authenticator
+                                        </button>
+                                        {totpSuccess && <span className="text-xs text-emerald-300">{totpSuccess}</span>}
+                                        {totpError && <span className="text-xs text-rose-300">{totpError}</span>}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <div className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 text-sm">
                             <div>
                                 <p className="font-semibold text-slate-100">Password</p>

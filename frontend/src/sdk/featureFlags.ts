@@ -5,7 +5,7 @@ export interface FeatureFlagClientConfig {
 
 export interface FeatureFlagEvaluationRequest {
     userId?: string;
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
     flags?: string[];
     environment?: string;
 }

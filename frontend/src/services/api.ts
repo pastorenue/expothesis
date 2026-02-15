@@ -178,7 +178,7 @@ export const trackApi = {
         api.get<ListSessionsResponse>('/track/sessions', { params: { limit, offset }, headers: trackingHeaders, signal }),
 
     getReplay: (sessionId: string, limit = 1200, offset = 0, signal?: AbortSignal) =>
-        api.get<Record<string, any>[]>(`/track/replay/${sessionId}`, { params: { limit, offset }, headers: trackingHeaders, signal }),
+        api.get<import('../types').ReplayEvent[]>(`/track/replay/${sessionId}`, { params: { limit, offset }, headers: trackingHeaders, signal }),
 
     listEvents: (sessionId: string, eventType?: string, limit = 200, signal?: AbortSignal) =>
         api.get<ActivityEvent[]>('/track/events', { params: { session_id: sessionId, event_type: eventType, limit }, headers: trackingHeaders, signal }),

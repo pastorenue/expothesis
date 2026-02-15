@@ -2,13 +2,16 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../services/api';
 
+const getAuthError = (error: unknown, fallback: string) => {
+    const err = error as { response?: { data?: { error?: string } } };
+    return err.response?.data?.error ?? fallback;
+};
+
 export const LoginPage: React.FC = () => {
     const navigate = useNavigate();
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
-    const [otp, setOtp] = React.useState('');
     const [totp, setTotp] = React.useState('');
-    const [devCode, setDevCode] = React.useState<string | undefined>(undefined);
     const [totpEnabled, setTotpEnabled] = React.useState(false);
     const [step, setStep] = React.useState<'login' | 'otp'>('login');
     const [error, setError] = React.useState<string | null>(null);
@@ -18,22 +21,28 @@ export const LoginPage: React.FC = () => {
         try {
             const res = await authApi.login({ email, password });
             setTotpEnabled(res.data.totp_enabled);
-            setDevCode(res.data.dev_code);
+            if (!res.data.requires_otp) {
+                const tokenRes = await authApi.verifyOtp({ email, code: '' });
+                window.localStorage.setItem('expothesis-token', tokenRes.data.token);
+                window.localStorage.setItem('expothesis-user-id', tokenRes.data.user_id);
+                navigate('/home');
+                return;
+            }
             setStep('otp');
-        } catch (err: any) {
-            setError(err.response?.data?.error || 'Login failed');
+        } catch (err: unknown) {
+            setError(getAuthError(err, 'Login failed'));
         }
     };
 
     const handleVerify = async () => {
         setError(null);
         try {
-            const res = await authApi.verifyOtp({ email, code: otp, totp_code: totp || undefined });
+            const res = await authApi.verifyOtp({ email, code: '', totp_code: totp || undefined });
             window.localStorage.setItem('expothesis-token', res.data.token);
             window.localStorage.setItem('expothesis-user-id', res.data.user_id);
             navigate('/home');
-        } catch (err: any) {
-            setError(err.response?.data?.error || 'Verification failed');
+        } catch (err: unknown) {
+            setError(getAuthError(err, 'Verification failed'));
         }
     };
 
@@ -57,7 +66,7 @@ export const LoginPage: React.FC = () => {
                     <p className="text-sm text-slate-400">
                         {step === 'login'
                             ? 'Use your email and password to continue.'
-                            : 'Enter the code sent to your email.'}
+                            : 'Enter the code from your authenticator app.'}
                     </p>
                     {error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
                     <div className="mt-4 space-y-3">
@@ -86,13 +95,6 @@ export const LoginPage: React.FC = () => {
                             </>
                         ) : (
                             <>
-                                <input
-                                    type="text"
-                                    className="input"
-                                    value={otp}
-                                    onChange={(e) => setOtp(e.target.value)}
-                                    placeholder="Email OTP code"
-                                />
                                 {totpEnabled && (
                                     <input
                                         type="text"
@@ -101,9 +103,6 @@ export const LoginPage: React.FC = () => {
                                         onChange={(e) => setTotp(e.target.value)}
                                         placeholder="Authenticator code"
                                     />
-                                )}
-                                {devCode && (
-                                    <div className="text-xs text-slate-400">Dev OTP: {devCode}</div>
                                 )}
                                 <button className="btn-primary w-full" onClick={handleVerify}>
                                     Verify & Sign in
@@ -121,31 +120,21 @@ export const RegisterPage: React.FC = () => {
     const navigate = useNavigate();
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
-    const [otp, setOtp] = React.useState('');
-    const [devCode, setDevCode] = React.useState<string | undefined>(undefined);
-    const [step, setStep] = React.useState<'register' | 'otp'>('register');
     const [error, setError] = React.useState<string | null>(null);
 
     const handleRegister = async () => {
         setError(null);
         try {
             const res = await authApi.register({ email, password });
-            setDevCode(res.data.dev_code);
-            setStep('otp');
-        } catch (err: any) {
-            setError(err.response?.data?.error || 'Registration failed');
-        }
-    };
-
-    const handleVerify = async () => {
-        setError(null);
-        try {
-            const res = await authApi.verifyOtp({ email, code: otp });
-            window.localStorage.setItem('expothesis-token', res.data.token);
-            window.localStorage.setItem('expothesis-user-id', res.data.user_id);
-            navigate('/home');
-        } catch (err: any) {
-            setError(err.response?.data?.error || 'Verification failed');
+            if (!res.data.requires_otp) {
+                const tokenRes = await authApi.verifyOtp({ email, code: '' });
+                window.localStorage.setItem('expothesis-token', tokenRes.data.token);
+                window.localStorage.setItem('expothesis-user-id', tokenRes.data.user_id);
+                navigate('/home');
+                return;
+            }
+        } catch (err: unknown) {
+            setError(getAuthError(err, 'Registration failed'));
         }
     };
 
@@ -165,54 +154,34 @@ export const RegisterPage: React.FC = () => {
             </header>
             <div className="flex min-h-screen items-center justify-center px-6 py-10">
                 <div className="card w-full max-w-md">
-                    <h2 className="mb-2">{step === 'register' ? 'Create account' : 'Verify Email'}</h2>
+                    <h2 className="mb-2">Create account</h2>
                     <p className="text-sm text-slate-400">
-                        {step === 'register'
-                            ? 'Create your account to start experimenting.'
-                            : 'Enter the code sent to your email.'}
+                        Create your account to start experimenting.
                     </p>
                     {error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
                     <div className="mt-4 space-y-3">
-                        {step === 'register' ? (
-                            <>
-                                <input
-                                    type="email"
-                                    className="input"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    placeholder="Email"
-                                />
-                                <input
-                                    type="password"
-                                    className="input"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    placeholder="Password"
-                                />
-                                <button className="btn-primary w-full" onClick={handleRegister}>
-                                    Register
-                                </button>
-                                <p className="text-sm text-slate-400">
-                                    Already have an account? <Link to="/login" className="text-cyan-300">Sign in</Link>
-                                </p>
-                            </>
-                        ) : (
-                            <>
-                                <input
-                                    type="text"
-                                    className="input"
-                                    value={otp}
-                                    onChange={(e) => setOtp(e.target.value)}
-                                    placeholder="Email OTP code"
-                                />
-                                {devCode && (
-                                    <div className="text-xs text-slate-400">Dev OTP: {devCode}</div>
-                                )}
-                                <button className="btn-primary w-full" onClick={handleVerify}>
-                                    Verify & Continue
-                                </button>
-                            </>
-                        )}
+                        <>
+                            <input
+                                type="email"
+                                className="input"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="Email"
+                            />
+                            <input
+                                type="password"
+                                className="input"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="Password"
+                            />
+                            <button className="btn-primary w-full" onClick={handleRegister}>
+                                Register
+                            </button>
+                            <p className="text-sm text-slate-400">
+                                Already have an account? <Link to="/login" className="text-cyan-300">Sign in</Link>
+                            </p>
+                        </>
                     </div>
                 </div>
             </div>

@@ -74,9 +74,10 @@ export const StatCard: React.FC<StatCardProps> = ({ title, value, subtitle, tren
 
 interface LoadingSpinnerProps {
     size?: 'sm' | 'md' | 'lg';
+    fullHeight?: boolean;
 }
 
-export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 'md' }) => {
+export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 'md', fullHeight = false }) => {
     const sizeClasses = {
         sm: 'w-4 h-4',
         md: 'w-8 h-8',
@@ -84,8 +85,11 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size = 'md' }) =
     };
 
     return (
-        <div className="flex items-center justify-center p-4">
-            <div className={`${sizeClasses[size]} animate-spin rounded-full border-4 border-slate-800 border-t-cyan-400`} />
+        <div className={`flex w-full items-center justify-center ${fullHeight ? 'min-h-[60vh]' : 'py-6'}`}>
+            <div
+                className={`${sizeClasses[size]} animate-spin rounded-full border-[3px] border-slate-700/70 border-t-cyan-300/70`}
+                style={{ animationDuration: '1.4s' }}
+            />
         </div>
     );
 };

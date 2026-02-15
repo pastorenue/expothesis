@@ -131,7 +131,7 @@ export const HomeOverview: React.FC = () => {
     };
 
     if (experimentsLoading || gatesLoading) {
-        return <LoadingSpinner />;
+        return <LoadingSpinner fullHeight />;
     }
 
     const activeTrend = trendMeta(latestWeek?.active, prevWeek?.active);
