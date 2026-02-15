@@ -28,6 +28,17 @@ import type {
     CupedConfig,
     CupedConfigRequest,
     UpdateUserGroupRequest,
+    AiChatRequest,
+    AiChatResponse,
+    AiModelsResponse,
+    RegisterRequest,
+    LoginRequest,
+    VerifyOtpRequest,
+    AuthStatusResponse,
+    AuthTokenResponse,
+    TotpSetupResponse,
+    SdkTokensResponse,
+    RotateSdkTokensRequest,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -37,6 +48,15 @@ const api = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
+});
+
+api.interceptors.request.use((config) => {
+    const token = window.localStorage.getItem('expothesis-token');
+    if (token) {
+        config.headers = config.headers ?? {};
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
 });
 
 const TRACKING_KEY = import.meta.env.VITE_TRACKING_KEY;
@@ -168,6 +188,36 @@ export const trackApi = {
 export const analyticsApi = {
     getOverview: () =>
         api.get<AnalyticsOverviewResponse>('/analytics/overview'),
+};
+
+// AI Assist (LiteLLM proxy)
+export const aiApi = {
+    chat: (data: AiChatRequest) =>
+        api.post<AiChatResponse>('/ai/chat', data),
+    models: () =>
+        api.get<AiModelsResponse>('/ai/models'),
+};
+
+// Auth
+export const authApi = {
+    register: (data: RegisterRequest) =>
+        api.post<AuthStatusResponse>('/auth/register', data),
+    login: (data: LoginRequest) =>
+        api.post<AuthStatusResponse>('/auth/login', data),
+    verifyOtp: (data: VerifyOtpRequest) =>
+        api.post<AuthTokenResponse>('/auth/verify-otp', data),
+    setupTotp: (user_id: string) =>
+        api.post<TotpSetupResponse>('/auth/totp/setup', { user_id }),
+    verifyTotp: (user_id: string, code: string) =>
+        api.post('/auth/totp/verify', { user_id, code }),
+};
+
+// SDK Tokens
+export const sdkApi = {
+    getTokens: () =>
+        api.get<SdkTokensResponse>('/sdk/tokens'),
+    rotateTokens: (data: RotateSdkTokensRequest) =>
+        api.post<SdkTokensResponse>('/sdk/tokens/rotate', data),
 };
 
 export default api;

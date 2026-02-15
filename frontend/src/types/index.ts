@@ -200,6 +200,69 @@ export interface UpdateUserGroupRequest {
     assignment_rule?: string;
 }
 
+export interface AiChatMessage {
+    role: 'system' | 'user' | 'assistant';
+    content: string;
+}
+
+export interface AiChatRequest {
+    model?: string;
+    messages: AiChatMessage[];
+    temperature?: number;
+    max_tokens?: number;
+}
+
+export interface AiChatResponse {
+    model: string;
+    message: AiChatMessage;
+    usage?: Record<string, any>;
+}
+
+export interface AiModelsResponse {
+    models: string[];
+}
+
+export interface RegisterRequest {
+    email: string;
+    password: string;
+}
+
+export interface LoginRequest {
+    email: string;
+    password: string;
+}
+
+export interface VerifyOtpRequest {
+    email: string;
+    code: string;
+    totp_code?: string;
+}
+
+export interface AuthStatusResponse {
+    requires_otp: boolean;
+    totp_enabled: boolean;
+    dev_code?: string;
+}
+
+export interface AuthTokenResponse {
+    token: string;
+    user_id: string;
+}
+
+export interface TotpSetupResponse {
+    secret: string;
+    otpauth_url: string;
+}
+
+export interface SdkTokensResponse {
+    tracking_api_key?: string | null;
+    feature_flags_api_key?: string | null;
+}
+
+export interface RotateSdkTokensRequest {
+    kind: 'tracking' | 'feature_flags' | 'all';
+}
+
 export interface MoveUserGroupRequest {
     from_experiment_id: string;
     to_experiment_id: string;

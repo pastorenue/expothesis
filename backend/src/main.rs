@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod db;
+mod middleware;
 mod models;
 mod services;
 mod stats;
@@ -10,11 +11,13 @@ use actix_web::{web, App, HttpServer};
 use log::info;
 
 use config::Config;
-use db::ClickHouseClient;
+use db::{ClickHouseClient, connect_postgres};
+use middleware::auth::AuthMiddleware;
 use services::{
     AnalyticsService, CupedService, EventService, ExperimentService, FeatureFlagService,
-    FeatureGateService, TrackingService, UserGroupService,
+    FeatureGateService, SdkTokenService, TrackingService, UserGroupService,
 };
+use services::AuthService;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -28,6 +31,7 @@ async fn main() -> std::io::Result<()> {
     info!("Starting Expothesis Backend Server");
     info!("Server: {}:{}", config.server_host, config.server_port);
     info!("ClickHouse: {}", config.clickhouse_url);
+    info!("Postgres: {}", config.postgres_url);
 
     // Initialize database
     let db_client =
@@ -38,6 +42,34 @@ async fn main() -> std::io::Result<()> {
         .init_schema()
         .await
         .expect("Failed to initialize database schema");
+
+    let pg_pool = connect_postgres(&config.postgres_url)
+        .await
+        .expect("Failed to connect to Postgres");
+    if let Err(err) = sqlx::migrate!("./migrations").run(&pg_pool).await {
+        panic!("Failed to run Postgres migrations: {err}");
+    }
+
+    if let (Some(email), Some(password)) = (
+        config.default_admin_email.clone(),
+        config.default_admin_password.clone(),
+    ) {
+        let auth_service = AuthService::new(pg_pool.clone(), config.clone());
+        if let Err(err) = auth_service.ensure_admin(&email, &password).await {
+            log::warn!("Failed to create default admin: {}", err);
+        }
+    }
+
+    let sdk_token_service = SdkTokenService::new(pg_pool.clone());
+    if let Err(err) = sdk_token_service
+        .ensure_tokens(
+            config.tracking_api_key.clone(),
+            config.feature_flags_api_key.clone(),
+        )
+        .await
+    {
+        log::warn!("Failed to ensure SDK tokens: {}", err);
+    }
 
     // Create services with database set
     let db_with_auth = db_client.clone().with_database("expothesis");
@@ -53,6 +85,7 @@ async fn main() -> std::io::Result<()> {
         config.session_ttl_minutes,
     ));
     let config_data = web::Data::new(config.clone());
+    let pg_pool_data = web::Data::new(pg_pool);
 
     // Start HTTP server
     let server_addr = format!("{}:{}", config.server_host, config.server_port);
@@ -75,7 +108,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(event_service.clone())
             .app_data(analytics_service.clone())
             .app_data(tracking_service.clone())
+            .app_data(pg_pool_data.clone())
             .app_data(config_data.clone())
+            .wrap(AuthMiddleware::new(pg_pool_data.get_ref().clone(), config_data.get_ref().clone()))
             .configure(api::experiments::configure)
             .configure(api::user_groups::configure)
             .configure(api::events::configure)
@@ -83,6 +118,9 @@ async fn main() -> std::io::Result<()> {
             .configure(api::feature_flags::configure)
             .configure(api::feature_gates::configure)
             .configure(api::track::configure)
+            .configure(api::sdk::configure)
+            .configure(api::ai::configure)
+            .configure(api::auth::configure)
             .route("/health", web::get().to(health_check))
     })
     .bind(server_addr)?

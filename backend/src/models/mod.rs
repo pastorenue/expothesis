@@ -1,4 +1,5 @@
 pub mod analytics;
+pub mod auth;
 pub mod events;
 pub mod experiments;
 pub mod feature_flags;
@@ -8,6 +9,7 @@ pub mod statistics;
 pub mod user_groups;
 
 pub use analytics::*;
+pub use auth::*;
 pub use events::*;
 pub use experiments::*;
 pub use feature_flags::*;

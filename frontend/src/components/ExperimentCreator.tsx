@@ -95,6 +95,37 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
         return Array.from(options).sort();
     }, [experiments]);
 
+    const suggestedMetrics = React.useMemo(() => {
+        const defaults = new Set<string>();
+        if (formData.hypothesis.metric_type === MT.Proportion) {
+            defaults.add('conversion_rate');
+            defaults.add('activation_rate');
+        }
+        if (formData.hypothesis.metric_type === MT.Continuous) {
+            defaults.add('average_order_value');
+            defaults.add('time_on_task');
+        }
+        if (formData.hypothesis.metric_type === MT.Count) {
+            defaults.add('sessions_per_user');
+            defaults.add('feature_usage_count');
+        }
+        if (formData.experiment_type === ExperimentType.FeatureGate) {
+            defaults.add('gate_pass_rate');
+            defaults.add('rollout_success_rate');
+        }
+
+        metricOptions.slice(0, 6).forEach((metric) => defaults.add(metric));
+
+        const selected = new Set(
+            (formData.primary_metric || '')
+                .split(',')
+                .map((metric) => metric.trim())
+                .filter(Boolean),
+        );
+
+        return Array.from(defaults).filter((metric) => !selected.has(metric)).slice(0, 6);
+    }, [formData.experiment_type, formData.hypothesis.metric_type, formData.primary_metric, metricOptions]);
+
     const filteredGroups = React.useMemo(() => {
         const query = groupInput.trim().toLowerCase();
         return availableGroups
@@ -162,6 +193,24 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
             .filter(Boolean)
             .filter((value) => value !== metric);
         updateField('primary_metric', metrics.join(', '));
+    };
+
+    const applyHypothesisTemplate = () => {
+        const primaryMetric = (formData.primary_metric || '')
+            .split(',')
+            .map((metric) => metric.trim())
+            .filter(Boolean)[0] || 'conversion_rate';
+        const effectSize = formData.hypothesis.metric_type === MT.Continuous ? 0.08 : 0.05;
+
+        updateHypothesis(
+            'null_hypothesis',
+            `There is no difference in ${primaryMetric} between control and treatment.`,
+        );
+        updateHypothesis(
+            'alternative_hypothesis',
+            `Treatment improves ${primaryMetric} by at least ${(effectSize * 100).toFixed(0)}%.`,
+        );
+        updateHypothesis('expected_effect_size', effectSize);
     };
 
     const updateField = (field: keyof CreateExperimentRequest, value: any) => {
@@ -433,6 +482,26 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                             </div>
                         )}
                     </div>
+                    {suggestedMetrics.length > 0 && (
+                        <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI Suggestions</p>
+                                <span className="badge-gray">Based on history</span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                {suggestedMetrics.map((metric) => (
+                                    <button
+                                        key={metric}
+                                        type="button"
+                                        onClick={() => setPrimaryMetric(metric)}
+                                        className="badge-info"
+                                    >
+                                        {metric}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <div>
                             <label className="label">Experiment Type</label>
@@ -641,6 +710,20 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                                 value={formData.hypothesis.power}
                                 onChange={(e) => updateHypothesis('power', parseFloat(e.target.value))}
                             />
+                            </div>
+                        </div>
+                    <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI Hypothesis Draft</p>
+                            <span className="badge-gray">Auto-fill</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-300">
+                            Generate a hypothesis template based on your primary metric and experiment type.
+                        </p>
+                        <div className="mt-3">
+                            <button onClick={applyHypothesisTemplate} className="btn-secondary">
+                                Generate Hypothesis
+                            </button>
                         </div>
                     </div>
                 </div>

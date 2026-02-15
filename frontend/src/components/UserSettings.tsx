@@ -1,0 +1,252 @@
+import React from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { sdkApi } from '../services/api';
+import type { RotateSdkTokensRequest } from '../types';
+
+export const UserSettings: React.FC = () => {
+    const queryClient = useQueryClient();
+    const [pendingRotate, setPendingRotate] = React.useState<RotateSdkTokensRequest['kind'] | null>(null);
+    const [copiedKey, setCopiedKey] = React.useState<'tracking' | 'feature_flags' | null>(null);
+    const { data, isLoading } = useQuery({
+        queryKey: ['sdk-tokens'],
+        queryFn: async () => {
+            const response = await sdkApi.getTokens();
+            return response.data;
+        },
+    });
+    const rotateMutation = useMutation({
+        mutationFn: (payload: RotateSdkTokensRequest) => sdkApi.rotateTokens(payload),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['sdk-tokens'] });
+        },
+    });
+
+    const trackingKey = data?.tracking_api_key ?? '—';
+    const featureFlagsKey = data?.feature_flags_api_key ?? '—';
+
+    const handleCopy = async (value: string, kind: 'tracking' | 'feature_flags') => {
+        if (!value || value === '—') return;
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopiedKey(kind);
+            window.setTimeout(() => setCopiedKey((current) => (current === kind ? null : current)), 1500);
+        } catch {
+            // Silently ignore clipboard failures.
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            <div>
+                <h1>User Settings</h1>
+                <p className="mt-1 text-slate-400">
+                    Manage your profile, security, and SDK credentials.
+                </p>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+                <div className="card">
+                    <h3>Profile</h3>
+                    <p className="mt-2 text-sm text-slate-400">Update your display name and contact details.</p>
+                    <div className="mt-4 space-y-3">
+                        <div className="space-y-1">
+                            <label className="label">Name</label>
+                            <input className="input" defaultValue="Admin Operator" />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="label">Email</label>
+                            <input className="input" defaultValue="admin@expothesis.local" />
+                        </div>
+                    </div>
+                </div>
+                <div className="card">
+                    <h3>Security</h3>
+                    <p className="mt-2 text-sm text-slate-400">Manage password resets and two-factor auth.</p>
+                    <div className="mt-4 space-y-3">
+                        <div className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 text-sm">
+                            <div>
+                                <p className="font-semibold text-slate-100">Authenticator app</p>
+                                <p className="text-xs text-slate-500">Enabled</p>
+                            </div>
+                            <button className="btn-secondary">Manage</button>
+                        </div>
+                        <div className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-4 py-3 text-sm">
+                            <div>
+                                <p className="font-semibold text-slate-100">Password</p>
+                                <p className="text-xs text-slate-500">Last updated 2 days ago</p>
+                            </div>
+                            <button className="btn-secondary">Reset</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+                <div className="card">
+                    <h3>SDK Tokens</h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                        Use these tokens in your client SDKs for tracking and feature flags.
+                    </p>
+                    <div className="mt-4 space-y-4">
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Tracking API Key</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="badge-gray">{isLoading ? 'Loading' : 'Active'}</span>
+                                    <button
+                                        className="btn-secondary h-8 px-3 text-xs"
+                                        onClick={() => setPendingRotate('tracking')}
+                                        disabled={rotateMutation.isPending}
+                                    >
+                                        Regenerate
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="relative">
+                                <input className="input pr-9" value={trackingKey} readOnly />
+                                <button
+                                    type="button"
+                                    className="icon-action absolute right-2 top-1/2 -translate-y-1/2"
+                                    onClick={() => handleCopy(trackingKey, 'tracking')}
+                                    aria-label="Copy tracking key"
+                                >
+                                    {copiedKey === 'tracking' ? (
+                                        <span className="copy-burst" aria-hidden="true">
+                                            <span className="copy-burst-label">Copied</span>
+                                            <span className="copy-bubble copy-bubble-1" />
+                                            <span className="copy-bubble copy-bubble-2" />
+                                            <span className="copy-bubble copy-bubble-3" />
+                                            <span className="copy-bubble copy-bubble-4" />
+                                        </span>
+                                    ) : (
+                                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 17H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                        </svg>
+                                    )}
+                                    {copiedKey === 'tracking' && <span className="sr-only">Copied</span>}
+                                </button>
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs uppercase tracking-[0.2em] text-slate-500">Feature Flags Key</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="badge-info">SDK</span>
+                                    <button
+                                        className="btn-secondary h-8 px-3 text-xs"
+                                        onClick={() => setPendingRotate('feature_flags')}
+                                        disabled={rotateMutation.isPending}
+                                    >
+                                        Regenerate
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="relative">
+                                <input className="input pr-9" value={featureFlagsKey} readOnly />
+                                <button
+                                    type="button"
+                                    className="icon-action absolute right-2 top-1/2 -translate-y-1/2"
+                                    onClick={() => handleCopy(featureFlagsKey, 'feature_flags')}
+                                    aria-label="Copy feature flags key"
+                                >
+                                    {copiedKey === 'feature_flags' ? (
+                                        <span className="copy-burst" aria-hidden="true">
+                                            <span className="copy-burst-label">Copied</span>
+                                            <span className="copy-bubble copy-bubble-1" />
+                                            <span className="copy-bubble copy-bubble-2" />
+                                            <span className="copy-bubble copy-bubble-3" />
+                                            <span className="copy-bubble copy-bubble-4" />
+                                        </span>
+                                    ) : (
+                                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 17H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                                        </svg>
+                                    )}
+                                    {copiedKey === 'feature_flags' && <span className="sr-only">Copied</span>}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="card">
+                    <h3>Feature Flags SDK</h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                        Evaluate flags by user attributes with the lightweight client.
+                    </p>
+                    <pre className="mt-4 rounded-xl border border-slate-800/70 bg-slate-950/60 p-4 text-xs text-slate-200">
+{`import { ExpothesisFeatureFlags } from '@/sdk/featureFlags';
+
+const flags = new ExpothesisFeatureFlags({
+  endpoint: 'http://localhost:8080/api/sdk/feature-flags/evaluate',
+  apiKey: '${featureFlagsKey || 'YOUR_KEY'}'
+});
+
+const result = await flags.evaluate({
+  userId: 'user_123',
+  attributes: { plan: 'pro', region: 'us' }
+});
+
+const isNewNavEnabled = await flags.isEnabled('new-nav', {
+  userId: 'user_123',
+  attributes: { plan: 'pro' }
+});`}
+                    </pre>
+                    <button
+                        className="btn-secondary mt-4"
+                        onClick={() => setPendingRotate('all')}
+                        disabled={rotateMutation.isPending}
+                    >
+                        Regenerate All Tokens
+                    </button>
+                </div>
+            </div>
+            {pendingRotate && (
+                <div className="modal-overlay">
+                    <div className="modal-backdrop" onClick={() => setPendingRotate(null)} />
+                    <div className="modal-panel max-w-lg">
+                        <div className="modal-header">
+                            <h3>Regenerate Tokens</h3>
+                            <button type="button" className="icon-action" onClick={() => setPendingRotate(null)} aria-label="Close">
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        <div className="space-y-3 text-sm text-slate-300">
+                            <p>
+                                You are about to regenerate{' '}
+                                <span className="font-semibold text-slate-100">
+                                    {pendingRotate === 'all'
+                                        ? 'all SDK tokens'
+                                        : pendingRotate === 'tracking'
+                                            ? 'the tracking token'
+                                            : 'the feature flags token'}
+                                </span>
+                                . Any clients using the current token will stop working.
+                            </p>
+                            <p>Continue?</p>
+                        </div>
+                        <div className="mt-5 flex items-center justify-end gap-3">
+                            <button className="btn-secondary" onClick={() => setPendingRotate(null)}>
+                                Cancel
+                            </button>
+                            <button
+                                className="btn-danger"
+                                onClick={() => {
+                                    rotateMutation.mutate({ kind: pendingRotate });
+                                    setPendingRotate(null);
+                                }}
+                                disabled={rotateMutation.isPending}
+                            >
+                                Regenerate
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

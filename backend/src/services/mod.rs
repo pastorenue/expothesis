@@ -1,18 +1,22 @@
 pub mod analytics_service;
+pub mod auth_service;
 pub mod cuped_service;
 pub mod event_service;
 pub mod experiment_service;
 pub mod feature_flag_service;
 pub mod feature_gate_service;
+pub mod sdk_token_service;
 pub mod targeting;
 pub mod tracking_service;
 pub mod user_group_service;
 
 pub use analytics_service::AnalyticsService;
+pub use auth_service::AuthService;
 pub use cuped_service::CupedService;
 pub use event_service::EventService;
 pub use experiment_service::ExperimentService;
 pub use feature_flag_service::FeatureFlagService;
 pub use feature_gate_service::FeatureGateService;
+pub use sdk_token_service::SdkTokenService;
 pub use tracking_service::TrackingService;
 pub use user_group_service::UserGroupService;

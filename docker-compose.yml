@@ -12,9 +12,25 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - CLICKHOUSE_URL=http://clickhouse:8123
+      - DATABASE_URL=postgres://expothesis:expothesis@postgres:5432/expothesis
       - RUST_LOG=info
       - TRACKING_API_KEY=expothesis-demo-key
+      - FEATURE_FLAGS_API_KEY=expothesis-flags-key
       - SESSION_TTL_MINUTES=30
+      - LITELLM_BASE_URL=http://litellm:4000/v1
+      - LITELLM_API_KEY=${LITELLM_MASTER_KEY}
+      - LITELLM_DEFAULT_MODEL=${LITELLM_DEFAULT_MODEL:-gpt-4o-mini}
+      - LITELLM_MODELS=${LITELLM_MODELS:-gpt-4o-mini,gpt-3.5-turbo}
+      - JWT_SECRET=${JWT_SECRET:-change-me}
+      - JWT_TTL_MINUTES=60
+      - ALLOW_DEV_OTP=1
+      - SMTP_HOST=mailpit
+      - SMTP_USER=
+      - SMTP_PASS=
+      - SMTP_FROM=no-reply@expothesis.local
+      - LOG_ONLY_OTP=0
+      - DEFAULT_ADMIN_EMAIL=admin@expothesis.local
+      - DEFAULT_ADMIN_PASSWORD=admin
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -59,9 +75,51 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    container_name: expothesis-postgres
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=expothesis
+      - POSTGRES_PASSWORD=expothesis
+      - POSTGRES_DB=expothesis
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - expothesis-network
+    restart: unless-stopped
+
+  mailpit:
+    container_name: expothesis-mailpit
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - expothesis-network
+    restart: unless-stopped
+
+  litellm:
+    container_name: litellm-proxy
+    image: ghcr.io/berriai/litellm:main-latest
+    profiles: ["ai"]
+    ports:
+      - "4000:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+    command: ["--port", "4000", "--config", "/app/config.yaml"]
+    networks:
+      - expothesis-network
+    restart: unless-stopped
+
 networks:
   expothesis-network:
     driver: bridge
 
 volumes:
   clickhouse_data:
+  postgres_data:

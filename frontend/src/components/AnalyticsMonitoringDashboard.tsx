@@ -27,10 +27,10 @@ import { analyticsApi } from '../services/api';
 import { LoadingSpinner, StatCard } from './Common';
 
 const tooltipStyles = {
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-    border: '1px solid rgba(148, 163, 184, 0.2)',
+    backgroundColor: 'var(--chart-tooltip-bg)',
+    border: '1px solid var(--chart-tooltip-border)',
     borderRadius: '12px',
-    color: '#e2e8f0',
+    color: 'var(--chart-tooltip-text)',
 };
 
 const coverageColors: Record<string, string> = {
@@ -93,10 +93,6 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
         icon?: React.ReactNode;
     }
 
-    if (isLoading && !data) {
-        return <LoadingSpinner />;
-    }
-
     const summary = data?.summary;
     const coverageSlices =
         data?.metric_coverage?.map((slice) => ({
@@ -115,6 +111,38 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
         errorRate: point.error_rate,
         crashRate: point.crash_rate,
     }));
+
+    const alertTriage = React.useMemo(() => {
+        const alerts = data?.alert_feed ?? [];
+        const counts = alerts.reduce(
+            (acc, alert) => {
+                acc[alert.severity] = (acc[alert.severity] || 0) + 1;
+                return acc;
+            },
+            {} as Record<string, number>,
+        );
+
+        const recommendations: string[] = [];
+        if ((counts.critical ?? 0) > 0) {
+            recommendations.push('Pause or throttle exposure for impacted experiments until guardrails stabilize.');
+        }
+        if (data?.srm?.summary?.p_value !== undefined && data.srm.summary.p_value < 0.05) {
+            recommendations.push('Investigate SRM: verify assignment logic and allocation integrity.');
+        }
+        if (data?.system_health?.sdk_error_rate !== undefined && data.system_health.sdk_error_rate > 0.02) {
+            recommendations.push(`SDK error rate elevated (${formatPercent(data.system_health.sdk_error_rate, 2)}). Check client SDK versions.`);
+        }
+
+        if (recommendations.length === 0) {
+            recommendations.push('No critical risks detected. Continue monitoring live metrics.');
+        }
+
+        return { counts, recommendations };
+    }, [data, formatPercent]);
+
+    if (isLoading && !data) {
+        return <LoadingSpinner />;
+    }
 
     const trendFor = (value?: number) => {
         if (value === undefined || Number.isNaN(value)) return 'neutral' as const;
@@ -174,7 +202,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
         <div className="space-y-6 animate-fade-in">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1>Analytics & Monitoring</h1>
+                    <h1>Insights</h1>
                     <p className="mt-1 text-slate-400">
                         Live experiment observability, guardrails, and metric health across your platform.
                     </p>
@@ -227,7 +255,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                                 <XAxis dataKey="time" stroke="#94a3b8" />
                                 <YAxis stroke="#94a3b8" />
                                 <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
                                 <Area type="monotone" dataKey="assignments" stroke="#22c55e" fill="url(#assignFill)" />
                                 <Area type="monotone" dataKey="exposures" stroke="#38bdf8" fill="url(#exposureFill)" />
                                 <Line type="monotone" dataKey="conversions" stroke="#fbbf24" strokeWidth={2} />
@@ -257,30 +285,30 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                                     ))}
                                 </Pie>
                                 <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
+                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
                             <span className="text-slate-400">Total metrics</span>
                             <span className="font-semibold text-slate-100">
                                 {data?.metric_coverage_totals?.total_metrics ?? 0}
                             </span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
+                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
                             <span className="text-slate-400">Guardrails</span>
                             <span className="font-semibold text-slate-100">
                                 {data?.metric_coverage_totals?.guardrails ?? 0}
                             </span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
+                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
                             <span className="text-slate-400">Diagnostics</span>
                             <span className="font-semibold text-slate-100">
                                 {data?.metric_coverage_totals?.diagnostics ?? 0}
                             </span>
                         </div>
-                        <div className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
+                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
                             <span className="text-slate-400">Holdout metrics</span>
                             <span className="font-semibold text-slate-100">
                                 {data?.metric_coverage_totals?.holdout_metrics ?? 0}
@@ -303,7 +331,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                                 <XAxis dataKey="day" stroke="#94a3b8" />
                                 <YAxis stroke="#94a3b8" />
                                 <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
                                 <Line type="monotone" dataKey="conversion" stroke="#38bdf8" strokeWidth={2} />
                                 <Line type="monotone" dataKey="revenue" stroke="#22c55e" strokeWidth={2} />
                                 <Line type="monotone" dataKey="retention" stroke="#fbbf24" strokeWidth={2} />
@@ -324,7 +352,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                                 <XAxis dataKey="day" stroke="#94a3b8" />
                                 <YAxis stroke="#94a3b8" />
                                 <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
                                 <ReferenceLine y={250} stroke="#f59e0b" strokeDasharray="4 4" />
                                 <Line type="monotone" dataKey="latency" stroke="#f59e0b" strokeWidth={2} />
                                 <Line type="monotone" dataKey="errorRate" stroke="#f87171" strokeWidth={2} />
@@ -348,25 +376,33 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                                 <XAxis dataKey="variant" stroke="#94a3b8" />
                                 <YAxis stroke="#94a3b8" />
                                 <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
                                 <Bar dataKey="expected" fill="#38bdf8" name="Expected %" />
                                 <Bar dataKey="observed" fill="#f59e0b" name="Observed %" />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
+                        <div className="insights-tile rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
                             <p className="text-slate-400">p-value</p>
                             <p className="text-lg font-semibold text-rose-300">
                                 {data?.srm?.summary?.p_value?.toFixed(3) ?? '—'}
                             </p>
                         </div>
-                        <div className="rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
+                        <div className="insights-tile rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
                             <p className="text-slate-400">Allocation drift</p>
                             <p className="text-lg font-semibold text-amber-200">
                                 {data?.srm?.summary ? `${data.srm.summary.allocation_drift.toFixed(2)}%` : '—'}
                             </p>
                         </div>
+                    </div>
+                    <div className="mt-4 rounded-xl border border-slate-800/70 bg-slate-950/40 p-3 text-sm text-slate-300">
+                        <span className="text-xs uppercase tracking-[0.2em] text-slate-400">AI Note</span>
+                        <p className="mt-2">
+                            {data?.srm?.summary?.p_value !== undefined && data.srm.summary.p_value < 0.05
+                                ? 'SRM is significant. Validate assignment hashing, gate rules, and traffic splits before scaling.'
+                                : 'SRM within tolerance. Continue monitoring allocation drift as traffic ramps.'}
+                        </p>
                     </div>
                 </div>
 
@@ -402,7 +438,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                                 <XAxis dataKey="day" stroke="#94a3b8" />
                                 <YAxis stroke="#94a3b8" />
                                 <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
                                 <Bar dataKey="critical" stackId="a" fill="#f87171" />
                                 <Bar dataKey="warning" stackId="a" fill="#fbbf24" />
                                 <Bar dataKey="info" stackId="a" fill="#38bdf8" />
@@ -468,9 +504,24 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                         <h3>Alert Feed</h3>
                         <span className="badge-gray">Realtime ops</span>
                     </div>
+                    {alertTriage && (
+                        <div className="insights-card mt-4 rounded-xl border border-slate-800/70 bg-slate-950/50 p-4">
+                            <div className="flex items-center justify-between">
+                                <p className="text-sm font-semibold text-slate-100">AI Triage Summary</p>
+                                <span className="badge-gray">
+                                    {(alertTriage.counts.critical ?? 0)} critical · {(alertTriage.counts.warning ?? 0)} warning
+                                </span>
+                            </div>
+                            <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                                {alertTriage.recommendations.map((item, idx) => (
+                                    <li key={idx}>• {item}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
                     <div className="mt-4 space-y-3">
                         {(data?.alert_feed ?? []).map((alert) => (
-                            <div key={alert.title} className="rounded-xl border border-slate-800/70 bg-slate-950/50 p-4">
+                            <div key={alert.title} className="insights-card rounded-xl border border-slate-800/70 bg-slate-950/50 p-4">
                                 <div className="flex items-center justify-between">
                                     <p className="text-sm font-semibold text-slate-100">{alert.title}</p>
                                     <span className={severityBadge(alert.severity)}>{alert.severity}</span>
@@ -481,7 +532,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
                         ))}
                     </div>
                     <div className="mt-4 grid gap-3">
-                        <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3 text-sm">
+                        <div className="insights-tile rounded-xl border border-slate-800/70 bg-slate-950/40 p-3 text-sm">
                             <div className="flex items-center justify-between">
                                 <span className="text-slate-400">Data freshness</span>
                                 <span className="text-emerald-300">
