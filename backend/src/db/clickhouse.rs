@@ -287,6 +287,23 @@ impl ClickHouseClient {
             .await
             .context("Failed to create analytics_alerts table")?;
 
+        // CUPED configs table
+        self.client
+            .query(
+                "CREATE TABLE IF NOT EXISTS expothesis.cuped_configs (
+                    experiment_id String,
+                    covariate_metric String,
+                    lookback_days UInt32,
+                    min_sample_size UInt64,
+                    created_at DateTime,
+                    updated_at DateTime
+                ) ENGINE = ReplacingMergeTree(updated_at)
+                ORDER BY experiment_id",
+            )
+            .execute()
+            .await
+            .context("Failed to create cuped_configs table")?;
+
         info!("Schema initialization complete");
         Ok(())
     }

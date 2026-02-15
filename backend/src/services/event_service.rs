@@ -25,7 +25,7 @@ impl EventService {
             metric_name: req.metric_name,
             metric_value: req.metric_value,
             attributes: req.attributes.clone(),
-            timestamp: Utc::now(),
+            timestamp: req.timestamp.unwrap_or_else(Utc::now),
         };
 
         let row = MetricEventRow {

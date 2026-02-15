@@ -35,7 +35,7 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, format = 'uppe
 interface StatCardProps {
     title: string;
     value: string | number;
-    subtitle?: string;
+    subtitle?: React.ReactNode;
     trend?: 'up' | 'down' | 'neutral';
     icon?: React.ReactNode;
 }

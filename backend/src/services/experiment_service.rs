@@ -324,6 +324,7 @@ impl ExperimentService {
             results,
             sample_sizes,
             health_checks,
+            cuped_adjusted_results: None,
         })
     }
 
@@ -533,12 +534,8 @@ impl ExperimentService {
             sampling_method,
             analysis_engine,
             sampling_seed: row.sampling_seed,
-            feature_flag_id: row
-                .feature_flag_id
-                .and_then(|id| Uuid::parse_str(&id).ok()),
-            feature_gate_id: row
-                .feature_gate_id
-                .and_then(|id| Uuid::parse_str(&id).ok()),
+            feature_flag_id: row.feature_flag_id.and_then(|id| Uuid::parse_str(&id).ok()),
+            feature_gate_id: row.feature_gate_id.and_then(|id| Uuid::parse_str(&id).ok()),
             health_checks,
             hypothesis,
             variants,

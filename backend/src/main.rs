@@ -12,8 +12,8 @@ use log::info;
 use config::Config;
 use db::ClickHouseClient;
 use services::{
-    AnalyticsService, EventService, ExperimentService, FeatureFlagService, FeatureGateService,
-    TrackingService, UserGroupService,
+    AnalyticsService, CupedService, EventService, ExperimentService, FeatureFlagService,
+    FeatureGateService, TrackingService, UserGroupService,
 };
 
 #[actix_web::main]
@@ -47,7 +47,11 @@ async fn main() -> std::io::Result<()> {
     let feature_gate_service = web::Data::new(FeatureGateService::new(db_with_auth.clone()));
     let event_service = web::Data::new(EventService::new(db_with_auth.clone()));
     let analytics_service = web::Data::new(AnalyticsService::new(db_with_auth.clone()));
-    let tracking_service = web::Data::new(TrackingService::new(db_with_auth.clone(), config.session_ttl_minutes));
+    let cuped_service = web::Data::new(CupedService::new(db_with_auth.clone()));
+    let tracking_service = web::Data::new(TrackingService::new(
+        db_with_auth.clone(),
+        config.session_ttl_minutes,
+    ));
     let config_data = web::Data::new(config.clone());
 
     // Start HTTP server
@@ -64,6 +68,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .app_data(experiment_service.clone())
+            .app_data(cuped_service.clone())
             .app_data(user_group_service.clone())
             .app_data(feature_flag_service.clone())
             .app_data(feature_gate_service.clone())
