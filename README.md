@@ -35,11 +35,17 @@ Expothesis is a high-performance, real-time experimentation platform designed fo
     ```bash
     docker-compose up --build
     ```
+    For AI Assist + LiteLLM:
+    ```bash
+    docker-compose --profile ai up --build
+    ```
 3.  **Access the Dashboard**:
     -   Frontend: [http://localhost:3000](http://localhost:3000)
     -   Backend API: [http://localhost:8080](http://localhost:8080)
     -   ClickHouse: [http://localhost:8123](http://localhost:8123)
     -   Postgres: [http://localhost:5432](http://localhost:5432)
+    -   Mailpit (OTP email): [http://localhost:8025](http://localhost:8025)
+    -   LiteLLM (AI proxy, profile `ai`): [http://localhost:4000](http://localhost:4000)
 
 ## 📊 Live Testing & Simulation
 
@@ -75,20 +81,151 @@ We provide a specialized data generator to simulate real-world traffic and verif
 ### User Group Assignment
 -   `POST /api/user-groups/assign` - Assign a user to a specific variant and group combination.
 
+## 🔐 Auth & Default Access
+
+Auth is enabled by default with email + OTP, plus optional TOTP (authenticator app).
+
+- Default admin user is created on first boot:
+  - Email: `admin@expothesis.local`
+  - Password: `admin`
+- OTP:
+  - Delivered via Mailpit at `http://localhost:8025`
+  - If `ALLOW_DEV_OTP=1`, the login response includes `dev_code`. If testing via the UI, open the network tab in browser dev tools to see the OTP code in the response.
+
+Environment variables (see `docker-compose.yml`):
+```bash
+JWT_SECRET=change-me
+JWT_TTL_MINUTES=60
+ALLOW_DEV_OTP=1
+```
+
+## 🧩 SDK Usage
+
+### Tracking SDK
+Used to send sessions, events, and replay data to `/api/track/*`.
+
+```ts
+import { ExpothesisTracker } from '@/sdk/expothesis';
+
+const tracker = new ExpothesisTracker({
+  endpoint: 'http://localhost:8080/api/track',
+  apiKey: '<TRACKING_API_KEY>',
+  userId: 'user_123',
+  autoTrack: true,
+  recordReplay: true
+});
+
+await tracker.init();
+await tracker.track('cta_click', { variant: 'A' }, 'click');
+```
+
+### Feature Flags SDK
+Used to evaluate gates/flags via `/api/sdk/feature-flags/evaluate`.
+
+```ts
+import { ExpothesisFeatureFlags } from '@/sdk/featureFlags';
+
+const flags = new ExpothesisFeatureFlags({
+  endpoint: 'http://localhost:8080/api/sdk/feature-flags/evaluate',
+  apiKey: '<FEATURE_FLAGS_API_KEY>',
+});
+
+const result = await flags.evaluate({
+  userId: 'user_123',
+  attributes: { plan: 'pro', region: 'us' },
+});
+```
+
+### SDK Tokens & Regeneration
+Tokens are stored in Postgres and can be regenerated from **User Settings → SDK Tokens**.
+- Regenerating invalidates existing client keys immediately.
+
+## 🤖 AI Assist (LiteLLM)
+
+AI Assist uses LiteLLM as a model router/proxy.
+
+1. Start the `ai` profile:
+   ```bash
+   docker-compose --profile ai up --build
+   ```
+2. Provide model keys:
+   ```bash
+   export OPENAI_API_KEY=your_key
+   export LITELLM_MASTER_KEY=your_litellm_key
+   ```
+3. (Optional) Configure models in `litellm/config.yaml`.
+
+The frontend calls the backend AI endpoints:
+- `POST /api/ai/chat`
+- `POST /api/ai/chat/stream`
+- `GET /api/ai/models`
+
+## 🧪 Quick API Tests (curl)
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Login (step 1: email + password)
+curl -X POST http://localhost:8080/api/auth/login \\
+  -H 'Content-Type: application/json' \\
+  -d '{"email":"admin@expothesis.local","password":"admin"}'
+
+# Verify OTP (step 2)
+curl -X POST http://localhost:8080/api/auth/verify-otp \\
+  -H 'Content-Type: application/json' \\
+  -d '{"email":"admin@expothesis.local","code":"<OTP_OR_DEV_CODE>"}'
+
+# Feature flags SDK evaluation
+curl -X POST http://localhost:8080/api/sdk/feature-flags/evaluate \\
+  -H 'Content-Type: application/json' \\
+  -H 'x-expothesis-key: <FEATURE_FLAGS_API_KEY>' \\
+  -d '{"user_id":"user_123","attributes":{"plan":"pro"},"flags":["new-nav"]}'
+```
+
+## 🔧 Environment Variables
+
+Key variables used by the stack (see `docker-compose.yml`):
+
+```bash
+# Core
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8080
+CLICKHOUSE_URL=http://clickhouse:8123
+DATABASE_URL=postgres://expothesis:expothesis@postgres:5432/expothesis
+
+# Auth / sessions
+JWT_SECRET=change-me
+JWT_TTL_MINUTES=60
+SESSION_TTL_MINUTES=30
+ALLOW_DEV_OTP=1
+
+# SDK keys (seeded into Postgres on first boot)
+TRACKING_API_KEY=expothesis-demo-key
+FEATURE_FLAGS_API_KEY=expothesis-flags-key
+
+# Email (OTP)
+SMTP_HOST=mailpit
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM=no-reply@expothesis.local
+LOG_ONLY_OTP=0
+
+# LiteLLM / AI
+LITELLM_BASE_URL=http://litellm:4000/v1
+LITELLM_API_KEY=$LITELLM_MASTER_KEY
+LITELLM_DEFAULT_MODEL=gpt-4o-mini
+LITELLM_MODELS=gpt-4o-mini,gpt-3.5-turbo
+OPENAI_API_KEY=your_key
+LITELLM_MASTER_KEY=your_litellm_key
+```
+
 ## 🔧 Development
 
 ### Backend (Rust)
 ```bash
 cd backend
 cargo run
-```
-
-### Auth + 2FA (TOTP)
-Set environment variables for JWT + optional LiteLLM:
-```bash
-export JWT_SECRET=change-me
-export JWT_TTL_MINUTES=60
-export ALLOW_DEV_OTP=1
 ```
 
 ### Frontend (React)
