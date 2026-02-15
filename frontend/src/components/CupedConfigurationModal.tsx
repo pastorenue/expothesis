@@ -48,8 +48,9 @@ export const CupedConfigurationModal: React.FC<CupedConfigurationModalProps> = (
             queryClient.invalidateQueries({ queryKey: ['analysis', experimentId] }); // Refresh analysis if using CUPED
             onClose();
         },
-        onError: (error: any) => {
-            alert(`Failed to save CUPED config: ${error?.response?.data?.error || error.message}`);
+        onError: (error: unknown) => {
+            const err = error as { response?: { data?: { error?: string } }; message?: string };
+            alert(`Failed to save CUPED config: ${err?.response?.data?.error || err?.message || 'Unknown error'}`);
         }
     });
 

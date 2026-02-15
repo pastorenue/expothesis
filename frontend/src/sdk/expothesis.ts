@@ -1,6 +1,6 @@
 import { record } from 'rrweb';
 
-type EventPayload = Record<string, any>;
+type EventPayload = Record<string, unknown>;
 
 export interface ExpothesisTrackerConfig {
     endpoint?: string;
@@ -253,13 +253,13 @@ export class ExpothesisTracker {
                     pushState: history.pushState,
                     replaceState: history.replaceState,
                 };
-                history.pushState = (...args) => {
-                    const result = this.originalHistory!.pushState.apply(history, args as any);
+                history.pushState = (...args: Parameters<History['pushState']>) => {
+                    const result = this.originalHistory!.pushState.apply(history, args);
                     this.navigationHandler?.();
                     return result;
                 };
-                history.replaceState = (...args) => {
-                    const result = this.originalHistory!.replaceState.apply(history, args as any);
+                history.replaceState = (...args: Parameters<History['replaceState']>) => {
+                    const result = this.originalHistory!.replaceState.apply(history, args);
                     this.navigationHandler?.();
                     return result;
                 };
@@ -365,7 +365,8 @@ export class ExpothesisTracker {
             return response.ok;
         } catch (error) {
             if (path === '/replay') {
-                if ((error as any)?.name === 'AbortError') {
+                const err = error as { name?: string };
+                if (err?.name === 'AbortError') {
                     console.warn('Expothesis replay upload failed: timeout');
                 } else {
                     console.warn('Expothesis replay upload failed: network error');

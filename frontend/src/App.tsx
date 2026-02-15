@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useSearchPa
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { experimentApi } from './services/api';
 import { ExperimentCreator } from './components/ExperimentCreator';
-import { ExperimentMonitor } from './components/ExperimentMonitor';
+import { ExperimentMonitor } from './components/experiment/ExperimentMonitor';
 import { StatisticalDashboard } from './components/StatisticalDashboard';
 import { UserGroupManager } from './components/UserGroupManager';
 import { SimulationStudio } from './components/SimulationStudio';
@@ -15,7 +15,7 @@ import { AiAssistHub } from './components/AiAssistHub';
 import { LoginPage, RegisterPage } from './components/AuthPages';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import { UserSettings } from './components/UserSettings';
-import type { CreateExperimentRequest } from './types';
+import type { CreateExperimentRequest, Experiment } from './types';
 import { ExpothesisTracker } from './sdk/expothesis';
 
 const queryClient = new QueryClient({
@@ -99,7 +99,7 @@ function HomePage() {
     const createMutation = useMutation({
         mutationFn: (data: CreateExperimentRequest) => experimentApi.create(data),
         onSuccess: (response) => {
-            queryClient.setQueryData(['experiments'], (oldData: any) => {
+            queryClient.setQueryData<Experiment[]>(['experiments'], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return [response.data, ...existing];
             });
@@ -107,7 +107,7 @@ function HomePage() {
         },
     });
 
-    if (isLoading) return <LoadingSpinner />;
+    if (isLoading) return <LoadingSpinner fullHeight />;
 
     if (showCreator) {
         return (
@@ -265,6 +265,11 @@ function ExperimentDetailPage() {
     const queryClient = useQueryClient();
     const [useCuped, setUseCuped] = React.useState(false);
 
+    const getMutationErrorMessage = (error: unknown) => {
+        const err = error as { response?: { data?: { error?: string } }; message?: string };
+        return err.response?.data?.error ?? err.message ?? 'Unknown error';
+    };
+
     const { data: experiment, isLoading: expLoading } = useQuery({
         queryKey: ['experiment', id],
         queryFn: async () => {
@@ -289,9 +294,9 @@ function ExperimentDetailPage() {
             queryClient.invalidateQueries({ queryKey: ['experiment', id] });
             queryClient.invalidateQueries({ queryKey: ['analysis', id] });
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('Failed to start experiment:', error);
-            alert(`Failed to start experiment: ${error.response?.data?.error || error.message}`);
+            alert(`Failed to start experiment: ${getMutationErrorMessage(error)}`);
         }
     });
 
@@ -300,9 +305,9 @@ function ExperimentDetailPage() {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['experiment', id] });
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('Failed to pause experiment:', error);
-            alert(`Failed to pause experiment: ${error.response?.data?.error || error.message}`);
+            alert(`Failed to pause experiment: ${getMutationErrorMessage(error)}`);
         }
     });
 
@@ -312,13 +317,13 @@ function ExperimentDetailPage() {
             queryClient.invalidateQueries({ queryKey: ['experiment', id] });
             queryClient.invalidateQueries({ queryKey: ['analysis', id] });
         },
-        onError: (error: any) => {
+        onError: (error: unknown) => {
             console.error('Failed to stop experiment:', error);
-            alert(`Failed to stop experiment: ${error.response?.data?.error || error.message}`);
+            alert(`Failed to stop experiment: ${getMutationErrorMessage(error)}`);
         }
     });
 
-    if (expLoading) return <LoadingSpinner />;
+    if (expLoading) return <LoadingSpinner fullHeight />;
     if (!experiment) return <div>Experiment not found</div>;
 
     return (

@@ -38,7 +38,7 @@ impl AuthService {
         let user_id = Uuid::new_v4();
 
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, is_email_verified, totp_enabled) VALUES ($1, $2, $3, false, false)",
+            "INSERT INTO users (id, email, password_hash, is_email_verified, totp_enabled) VALUES ($1, $2, $3, true, false)",
         )
         .bind(user_id)
         .bind(email)
@@ -47,11 +47,10 @@ impl AuthService {
         .await
         .context("Failed to create user")?;
 
-        let dev_code = self.send_otp(email, "verify_email").await?;
         Ok(AuthStatusResponse {
-            requires_otp: true,
+            requires_otp: false,
             totp_enabled: false,
-            dev_code,
+            dev_code: None,
         })
     }
 
@@ -85,9 +84,9 @@ impl AuthService {
         let user = self.get_user_by_email(email).await?;
         self.verify_password(password, &user.password_hash)?;
 
-        let dev_code = self.send_otp(email, "login").await?;
+        let dev_code = None;
         Ok(AuthStatusResponse {
-            requires_otp: true,
+            requires_otp: user.totp_enabled,
             totp_enabled: user.totp_enabled,
             dev_code,
         })
@@ -100,23 +99,10 @@ impl AuthService {
         totp_code: Option<&str>,
     ) -> Result<AuthTokenResponse> {
         let user = self.get_user_by_email(email).await?;
-        let otp_valid = self.consume_otp(user.id, code, "login").await?;
-        let verify_email = self.consume_otp(user.id, code, "verify_email").await?;
-        if !otp_valid && !verify_email {
-            anyhow::bail!("Invalid or expired code");
-        }
-
-        if !user.is_email_verified && verify_email {
-            sqlx::query("UPDATE users SET is_email_verified = true WHERE id = $1")
-                .bind(user.id)
-                .execute(&self.db)
-                .await
-                .context("Failed to verify email")?;
-        }
-
         if user.totp_enabled {
-            let totp = totp_code.ok_or_else(|| anyhow::anyhow!("TOTP code required"))?;
+            let totp = totp_code.ok_or_else(|| anyhow::anyhow!("Authenticator code required"))?;
             self.verify_totp_code(&user, totp)?;
+            return self.issue_token(user.id).await;
         }
 
         self.issue_token(user.id).await

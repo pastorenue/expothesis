@@ -2,15 +2,12 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { eventApi, experimentApi, userGroupApi } from '../services/api';
 import type { ExperimentAnalysis } from '../types';
-import {
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    Tooltip,
-    ResponsiveContainer,
-    CartesianGrid,
-} from 'recharts';
+import { SimulationHeader } from './simulation/SimulationHeader';
+import { SimulationConfigPanel } from './simulation/SimulationConfigPanel';
+import { NodePalette } from './simulation/NodePalette';
+import { SimulationOutput } from './simulation/SimulationOutput';
+import { SimulationDetails } from './simulation/SimulationDetails';
+import type { FlowEdge, FlowNode } from './simulation/types';
 
 const nodeColorByKind: Record<FlowNode['kind'], { border: string; badge: string }> = {
     'trigger-start': { border: 'border-cyan-400/70', badge: 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50' },
@@ -23,25 +20,6 @@ const nodeColorByKind: Record<FlowNode['kind'], { border: string; badge: string 
 
 const nodeBadgeClass = (kind: FlowNode['kind']) =>
     `inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[0.6rem] font-semibold title tracking-[0.18em] ${nodeColorByKind[kind].badge}`;
-
-type FlowNode = {
-    id: string;
-    label: string;
-    kind: 'trigger-start' | 'trigger-run' | 'experiment' | 'user-group' | 'hypothesis' | 'metric';
-    x: number;
-    y: number;
-    data?: {
-        experimentId?: string;
-        groupId?: string;
-        hypothesis?: string;
-        metric?: string;
-    };
-};
-
-type FlowEdge = {
-    from: string;
-    to: string;
-};
 
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 72;
@@ -81,6 +59,8 @@ export const SimulationStudio: React.FC = () => {
     const [edges, setEdges] = React.useState<FlowEdge[]>([]);
     const [pendingFrom, setPendingFrom] = React.useState<string | null>(null);
     const [hoverTarget, setHoverTarget] = React.useState<string | null>(null);
+    const pendingFromRef = React.useRef<string | null>(null);
+    const hoverTargetRef = React.useRef<string | null>(null);
     const [cursor, setCursor] = React.useState<{ x: number; y: number } | null>(null);
     const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null);
     const [errorTooltip, setErrorTooltip] = React.useState<{ x: number; y: number; message: string } | null>(null);
@@ -129,10 +109,10 @@ export const SimulationStudio: React.FC = () => {
 
     const signalCount = analysis?.sample_sizes?.reduce((sum, item) => sum + item.current_size, 0) ?? 0;
     const topResults = analysis?.results?.slice(0, 3) ?? [];
-    const formatDateTime = (date: Date) => {
+    const formatDateTime = React.useCallback((date: Date) => {
         const pad = (value: number) => String(value).padStart(2, '0');
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-    };
+    }, []);
 
     const parseDateTime = (value: string) => {
         if (!value) return null;
@@ -141,7 +121,7 @@ export const SimulationStudio: React.FC = () => {
         return parsed;
     };
 
-const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
+    const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
     const applyPickerValue = React.useCallback(
         (next: Date, target: 'start' | 'end' | null = pickerOpen) => {
             if (!target) return;
@@ -252,6 +232,14 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
     }, []);
 
     React.useEffect(() => {
+        pendingFromRef.current = pendingFrom;
+    }, [pendingFrom]);
+
+    React.useEffect(() => {
+        hoverTargetRef.current = hoverTarget;
+    }, [hoverTarget]);
+
+    React.useEffect(() => {
         zoomRef.current = zoom;
     }, [zoom]);
 
@@ -293,10 +281,14 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         const handleUp = () => {
             draggingRef.current = null;
             panningRef.current = null;
-            if (pendingFrom && hoverTarget) {
+            const pendingFromValue = pendingFromRef.current;
+            const hoverTargetValue = hoverTargetRef.current;
+            if (pendingFromValue && hoverTargetValue) {
                 setEdges((prev) => {
-                    const exists = prev.some((edge) => edge.from === pendingFrom && edge.to === hoverTarget);
-                    return exists ? prev : [...prev, { from: pendingFrom, to: hoverTarget }];
+                    const exists = prev.some(
+                        (edge) => edge.from === pendingFromValue && edge.to === hoverTargetValue
+                    );
+                    return exists ? prev : [...prev, { from: pendingFromValue, to: hoverTargetValue }];
                 });
                 reconnectRef.current = null;
                 setPendingFrom(null);
@@ -412,12 +404,12 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             });
         }
         return visited;
-    }, [edges, startNode?.id]);
+    }, [edges, startNode]);
 
-    const showError = (x: number, y: number, message: string) => {
+    const showError = React.useCallback((x: number, y: number, message: string) => {
         setErrorTooltip({ x, y, message });
         window.setTimeout(() => setErrorTooltip(null), 1600);
-    };
+    }, []);
 
     const isDuplicateNode = (node: Omit<FlowNode, 'id' | 'x' | 'y'>) => {
         if (node.kind === 'trigger-start' || node.kind === 'trigger-run') {
@@ -453,12 +445,12 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
     const toYaml = (flow: { nodes: FlowNode[]; edges: FlowEdge[] }) => {
         const indent = (level: number) => '  '.repeat(level);
         const lines: string[] = [];
-        const writeObj = (obj: Record<string, any>, level: number) => {
+        const writeObj = (obj: Record<string, unknown>, level: number) => {
             Object.entries(obj).forEach(([key, value]) => {
                 if (value === undefined || value === null) return;
-                if (typeof value === 'object' && !Array.isArray(value)) {
+                if (value && typeof value === 'object' && !Array.isArray(value)) {
                     lines.push(`${indent(level)}${key}:`);
-                    writeObj(value, level + 1);
+                    writeObj(value as Record<string, unknown>, level + 1);
                 } else {
                     lines.push(`${indent(level)}${key}: ${String(value)}`);
                 }
@@ -491,7 +483,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         const lines = input.split('\n');
         const result: { nodes: FlowNode[]; edges: FlowEdge[] } = { nodes: [], edges: [] };
         let section: 'nodes' | 'edges' | null = null;
-        let current: any = null;
+        let current: Record<string, unknown> | null = null;
         let inData = false;
 
         const pushCurrent = () => {
@@ -545,8 +537,9 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             const [key, ...valueParts] = line.split(':');
             const value = parseValue(valueParts.join(':').trim());
             if (inData) {
-                current.data = current.data ?? {};
-                current.data[key.trim()] = value;
+                const data = (current.data ?? {}) as Record<string, unknown>;
+                data[key.trim()] = value;
+                current.data = data;
             } else {
                 current[key.trim()] = value;
             }
@@ -555,11 +548,15 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         return result;
     };
 
-    const normalizeFlow = (flow: any) => {
-        if (!flow || !Array.isArray(flow.nodes) || !Array.isArray(flow.edges)) {
+    const normalizeFlow = (flow: unknown) => {
+        if (!flow || typeof flow !== 'object') {
             throw new Error('Invalid flow format. Expected nodes and edges arrays.');
         }
-        const nodes = flow.nodes.map((node: FlowNode, index: number) => {
+        const candidate = flow as { nodes?: unknown; edges?: unknown };
+        if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.edges)) {
+            throw new Error('Invalid flow format. Expected nodes and edges arrays.');
+        }
+        const nodes = candidate.nodes.map((node: FlowNode, index: number) => {
             const id = node.id ? String(node.id) : `imported-${node.kind}-${Date.now()}-${index}`;
             const x = Number.isFinite(Number(node.x)) ? Number(node.x) : 40 + (index % 3) * 220;
             const y = Number.isFinite(Number(node.y)) ? Number(node.y) : 60 + Math.floor(index / 3) * 120;
@@ -572,7 +569,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                 data: node.data ?? {},
             } as FlowNode;
         });
-        const edges = flow.edges.map((edge: FlowEdge) => ({
+        const edges = candidate.edges.map((edge: FlowEdge) => ({
             from: String(edge.from),
             to: String(edge.to),
         }));
@@ -634,6 +631,10 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         .filter((nodeId) => reachableToRun.has(nodeId))
         .map((nodeId) => getNodeById(nodeId)?.data?.groupId)
         .filter(Boolean) as string[];
+    const connectedMetricIdsKey = React.useMemo(
+        () => connectedMetricIds.join(','),
+        [connectedMetricIds],
+    );
     const connectedGroups = userGroups.filter((group) => fullyConnectedGroupIds.includes(group.id));
 
     const aggregatedSeries = React.useMemo(() => {
@@ -655,7 +656,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             });
             return next;
         });
-    }, [filteredSeries, fullyConnectedGroupIds.join(','), selectedExperiment?.id]);
+    }, [filteredSeries, fullyConnectedGroupIds, selectedExperiment]);
 
     const metricNodesForCharts = metricNodes.filter((node) => {
         const incoming = edges.some((edge) => {
@@ -683,7 +684,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         flowConnected &&
         startToRunConnected;
 
-    const startSimulation = async (reset = true) => {
+    const startSimulation = React.useCallback(async (reset = true) => {
         if (!selectedExperiment || !isFlowReady) return;
 
         if (selectedExperiment.status === 'stopped') {
@@ -786,7 +787,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
             };
             void run();
         }, 800);
-    };
+    }, [canAutoStart, isFlowReady, selectedExperiment, showError]);
 
     const stopSimulation = () => {
         if (simulationRef.current) {
@@ -832,9 +833,11 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
         flowConnected,
         isFlowReady,
         isPaused,
-        selectedExperiment?.id,
-        fullyConnectedGroupIds.join(','),
-        connectedMetricIds.join(','),
+        isSimulating,
+        selectedExperiment,
+        fullyConnectedGroupIds,
+        connectedMetricIdsKey,
+        startSimulation,
     ]);
 
     React.useEffect(() => {
@@ -856,7 +859,7 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                 }
             });
         });
-    }, [isSimulating, selectedExperiment?.id, fullyConnectedGroupIds.join(','), simulationSeries.length]);
+    }, [isSimulating, selectedExperiment, fullyConnectedGroupIds, simulationSeries]);
 
     const autoLayout = () => {
         setNodes((prev) =>
@@ -910,232 +913,36 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
 
     return (
         <div className="flow-studio space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                    <h1>Simulation Studio</h1>
-                    <p className="mt-1 text-slate-400">
-                        Orchestrate experiments, audiences, and hypotheses in a connected action canvas.
-                    </p>
-                </div>
-            </div>
+            <SimulationHeader />
 
             <div className="card relative overflow-hidden">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.15)_0,transparent_45%)] opacity-60"></div>
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(16,185,129,0.15)_0,transparent_40%)]"></div>
                 <div className="relative">
-                    <div className="flow-surface mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs text-slate-300">
-                        <div className="flex items-center gap-3">
-                            <span className="text-[0.6rem] font-bold title tracking-[0.2em] text-slate-200">Simulation Config:</span>
-                            <button
-                                className="btn-secondary"
-                                onClick={() =>
-                                    downloadFile(
-                                        JSON.stringify({ nodes, edges }, null, 2),
-                                        'flowstudio.json',
-                                        'application/json'
-                                    )
-                                }
-                            >
-                                Export JSON
-                            </button>
-                            <button
-                                className="btn-secondary"
-                                onClick={() =>
-                                    downloadFile(
-                                        toYaml({ nodes, edges }),
-                                        'flowstudio.yaml',
-                                        'text/yaml'
-                                    )
-                                }
-                            >
-                                Export YAML
-                            </button>
-                            <button className="btn-secondary" onClick={() => fileInputRef.current?.click()}>
-                                Import File
-                            </button>
-                            <input
-                                ref={fileInputRef}
-                                type="file"
-                                accept=".json,.yaml,.yml"
-                                className="hidden"
-                                onChange={(event) => {
-                                    const file = event.target.files?.[0];
-                                    if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = () => {
-                                        const content = String(reader.result || '');
-                                        setImportText(content);
-                                        try {
-                                            const parsed = content.trim().startsWith('{')
-                                                ? JSON.parse(content)
-                                                : parseYaml(content);
-                                            const normalized = normalizeFlow(parsed);
-                                            setNodes(normalized.nodes);
-                                            setEdges(normalized.edges);
-                                            setImportError(null);
-                                        } catch (error: any) {
-                                            setImportError(error?.message || 'Failed to load configuration.');
-                                        }
-                                    };
-                                    reader.readAsText(file);
-                                    event.target.value = '';
-                                }}
-                            />
-                        </div>
-                        <div className="flex flex-1 items-center gap-3">
-                            <textarea
-                                value={importText}
-                                onChange={(event) => setImportText(event.target.value)}
-                                placeholder="Paste JSON or YAML flow here..."
-                                className="min-h-[56px] flex-1 rounded-xl border border-slate-800/80 bg-slate-950/80 p-2 text-xs text-slate-200"
-                            />
-                            <button
-                                className="btn-primary"
-                                onClick={() => {
-                                    try {
-                                        const parsed = importText.trim().startsWith('{')
-                                            ? JSON.parse(importText)
-                                            : parseYaml(importText);
-                                        const normalized = normalizeFlow(parsed);
-                                        setNodes(normalized.nodes);
-                                        setEdges(normalized.edges);
-                                        setImportError(null);
-                                    } catch (error: any) {
-                                        setImportError(error?.message || 'Failed to load configuration.');
-                                    }
-                                }}
-                            >
-                                Load
-                            </button>
-                        </div>
-                        {importError && <div className="text-xs text-rose-300">{importError}</div>}
-                    </div>
+                    <SimulationConfigPanel
+                        nodes={nodes}
+                        edges={edges}
+                        importText={importText}
+                        importError={importError}
+                        setImportText={setImportText}
+                        setImportError={setImportError}
+                        fileInputRef={fileInputRef}
+                        toYaml={toYaml}
+                        parseYaml={parseYaml}
+                        normalizeFlow={normalizeFlow}
+                        downloadFile={downloadFile}
+                        setNodes={setNodes}
+                        setEdges={setEdges}
+                    />
 
                     <div className="flow-surface mt-6 rounded-2xl border border-slate-800/80 bg-slate-950/60 p-6">
                         <div className="space-y-4">
-                            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.2fr_1.2fr_1.2fr_1.2fr]">
-                                <details className="panel" open>
-                                    <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
-                                      Anchors
-                                    </summary>
-                                    <div className="mt-3 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto pr-1">
-                                        <button
-                                            className={nodeBadgeClass('trigger-start')}
-                                            onClick={() => createNode({ kind: 'trigger-start', label: 'Start' })}
-                                        >
-                                            Start
-                                        </button>
-                                        <button
-                                            className={nodeBadgeClass('trigger-run')}
-                                            onClick={() => createNode({ kind: 'trigger-run', label: 'Run' })}
-                                        >
-                                            Run
-                                        </button>
-                                    </div>
-                                </details>
-                                <details className="panel">
-                                    <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
-                                        Experiments
-                                    </summary>
-                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
-                                        {experiments.length === 0 && (
-                                            <p className="text-xs text-slate-500">No experiments available.</p>
-                                        )}
-                                        {experiments.map((exp) => (
-                                            <button
-                                                key={exp.id}
-                                                className={`${nodeBadgeClass('experiment')} w-full text-center`}
-                                                onClick={() =>
-                                                    createNode({
-                                                        kind: 'experiment',
-                                                        label: exp.name,
-                                                        data: { experimentId: exp.id },
-                                                    })
-                                                }
-                                            >
-                                                {exp.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </details>
-                                <details className="panel">
-                                    <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
-                                        User Groups
-                                    </summary>
-                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
-                                        {userGroups.length === 0 && (
-                                            <p className="text-xs text-slate-500">No user groups available.</p>
-                                        )}
-                                        {userGroups.map((group) => (
-                                            <button
-                                                key={group.id}
-                                                className={`${nodeBadgeClass('user-group')} w-full text-left`}
-                                                onClick={() =>
-                                                    createNode({
-                                                        kind: 'user-group',
-                                                        label: group.name,
-                                                        data: { groupId: group.id },
-                                                    })
-                                                }
-                                            >
-                                                {group.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </details>
-                                <details className="panel">
-                                    <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
-                                        Hypothesis
-                                    </summary>
-                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
-                                        {experiments.map((exp) =>
-                                            exp.hypothesis?.alternative_hypothesis ? (
-                                                <button
-                                                    key={`hyp-${exp.id}`}
-                                                    className={`${nodeBadgeClass('hypothesis')} w-full text-left`}
-                                                    onClick={() =>
-                                                        createNode({
-                                                            kind: 'hypothesis',
-                                                            label: `H₁: ${exp.name}`,
-                                                            data: { hypothesis: exp.hypothesis!.alternative_hypothesis },
-                                                        })
-                                                    }
-                                                >
-                                                    {exp.hypothesis.alternative_hypothesis}
-                                                </button>
-                                            ) : null
-                                        )}
-                                        {experiments.every((exp) => !exp.hypothesis) && (
-                                            <p className="text-xs text-slate-500">No hypotheses configured.</p>
-                                        )}
-                                    </div>
-                                </details>
-                                <details className="panel">
-                                    <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
-                                        Metrics
-                                    </summary>
-                                    <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
-                                        {[...new Set(experiments.map((exp) => exp.primary_metric).filter(Boolean))].map((metric) => (
-                                            <button
-                                                key={metric}
-                                                className={`${nodeBadgeClass('metric')} w-full text-left`}
-                                                onClick={() =>
-                                                    createNode({
-                                                        kind: 'metric',
-                                                        label: metric,
-                                                        data: { metric },
-                                                    })
-                                                }
-                                            >
-                                                {metric}
-                                            </button>
-                                        ))}
-                                        {experiments.length === 0 && (
-                                            <p className="text-xs text-slate-500">No metrics available.</p>
-                                        )}
-                                    </div>
-                                </details>
-                            </div>
+                            <NodePalette
+                                experiments={experiments}
+                                userGroups={userGroups}
+                                createNode={createNode}
+                                nodeBadgeClass={nodeBadgeClass}
+                            />
 
                             <div>
                         <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
@@ -1445,425 +1252,56 @@ const [pickerValue, setPickerValue] = React.useState<Date>(() => new Date());
                                 )}
                             </div>
                         </div>
-                        <div className="simulation-output flow-surface mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-                            <div className="mb-3 flex items-center justify-between text-xs title tracking-[0.2em] text-slate-500">
-                                <span>Simulation Output</span>
-                                <span
-                                    className={
-                                        isSimulating ? 'text-emerald-300' : isPaused ? 'text-amber-300' : 'text-slate-500'
-                                    }
-                                >
-                                    {isSimulating ? 'Running' : isPaused ? 'Paused' : ''}
-                                </span>
-                            </div>
-                            <div className="relative mb-4 flex flex-wrap items-center gap-3 text-xs text-slate-300">
-                                <div className="flex items-center gap-2">
-                                    <span className="title tracking-[0.2em] text-slate-500">From</span>
-                                    <button
-                                        ref={startRef}
-                                        className="flow-pill rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
-                                        onClick={(event) => {
-                                            const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setPickerPos({ top: rect.bottom + 8, left: rect.left });
-                                            setPickerOpen('start');
-                                        }}
-                                    >
-                                        {rangeStart ? rangeStart.replace('T', ' ') : 'Select datetime'}
-                                    </button>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className="title tracking-[0.2em] text-slate-500">To</span>
-                                    <button
-                                        ref={endRef}
-                                        className="flow-pill rounded-lg border border-slate-700/70 bg-slate-950/70 px-3 py-1 text-xs text-slate-200"
-                                        onClick={(event) => {
-                                            const rect = (event.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                            setPickerPos({ top: rect.bottom + 8, left: rect.left });
-                                            setPickerOpen('end');
-                                        }}
-                                    >
-                                        {rangeEnd ? rangeEnd.replace('T', ' ') : 'Select datetime'}
-                                    </button>
-                                </div>
-                                <button
-                                    className="btn-secondary"
-                                    onClick={() => {
-                                        setRangeStart('');
-                                        setRangeEnd('');
-                                    }}
-                                >
-                                    Clear
-                                </button>
-
-                                {pickerOpen && pickerPos && (
-                                    <div
-                                        ref={pickerRef}
-                                        className="flow-surface fixed z-50 w-[320px] rounded-2xl border border-slate-800/70 bg-slate-950/95 p-4 shadow-[0_30px_60px_-40px_rgba(15,23,42,0.9)]"
-                                        style={{ top: pickerPos.top, left: pickerPos.left }}
-                                    >
-                                        <div className="mb-3 flex items-center justify-between text-xs text-slate-300">
-                                            <button
-                                                className="btn-secondary"
-                                                onClick={() =>
-                                                    setPickerMonth(new Date(pickerMonth.getFullYear(), pickerMonth.getMonth() - 1, 1))
-                                                }
-                                            >
-                                                ◀
-                                            </button>
-                                            <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                                {pickerMonth.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-                                            </span>
-                                            <button
-                                                className="btn-secondary"
-                                                onClick={() =>
-                                                    setPickerMonth(new Date(pickerMonth.getFullYear(), pickerMonth.getMonth() + 1, 1))
-                                                }
-                                            >
-                                                ▶
-                                            </button>
-                                        </div>
-                                        {renderCalendar()}
-                                        <div className="mt-4 grid grid-cols-2 gap-3">
-                                            <div className="space-y-1">
-                                                <div className="text-[0.55rem] uppercase tracking-[0.2em] text-slate-500">Hour</div>
-                                                <select
-                                                    value={pickerValue.getHours()}
-                                                    onChange={(event) => {
-                                                        const next = new Date(pickerValue);
-                                                        next.setHours(Number(event.target.value));
-                                                        setPickerValue(next);
-                                                        applyPickerValue(next);
-                                                    }}
-                                                    className="w-full rounded-lg border border-slate-800/70 bg-slate-950/70 px-2 py-1 text-xs text-slate-200"
-                                                >
-                                                    {hours.map((hour) => (
-                                                        <option key={hour} value={hour}>
-                                                            {String(hour).padStart(2, '0')}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <div className="text-[0.55rem] uppercase tracking-[0.2em] text-slate-500">Minute</div>
-                                                <select
-                                                    value={pickerValue.getMinutes() - (pickerValue.getMinutes() % 3)}
-                                                    onChange={(event) => {
-                                                        const next = new Date(pickerValue);
-                                                        next.setMinutes(Number(event.target.value));
-                                                        setPickerValue(next);
-                                                        applyPickerValue(next);
-                                                    }}
-                                                    className="w-full rounded-lg border border-slate-800/70 bg-slate-950/70 px-2 py-1 text-xs text-slate-200"
-                                                >
-                                                    {minutes.map((minute) => (
-                                                        <option key={minute} value={minute}>
-                                                            {String(minute).padStart(2, '0')}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div className="mt-4 flex items-center justify-between">
-                                            <button
-                                                className="btn-secondary"
-                                                onClick={() => {
-                                                    if (pickerOpen === 'start') {
-                                                        setRangeStart('');
-                                                    } else {
-                                                        setRangeEnd('');
-                                                    }
-                                                    setPickerOpen(null);
-                                                }}
-                                            >
-                                                Clear
-                                            </button>
-                                            <div className="flex items-center gap-2">
-                                                <button className="btn-secondary" onClick={() => setPickerOpen(null)}>
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    className="btn-primary"
-                                                    onClick={() => {
-                                                        applyPickerValue(pickerValue);
-                                                        setPickerOpen(null);
-                                                    }}
-                                                >
-                                                    Apply
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            {simulationSeries.length === 0 ? (
-                                <p className="text-sm text-slate-400">
-                                    {selectedExperiment?.status === 'stopped'
-                                        ? 'Selected experiment is stopped. Duplicate or create a new experiment to simulate.'
-                                        : flowConnected && !isFlowReady
-                                        ? 'Complete Start → Experiment → User Group → Metric → Run to start streaming.'
-                                        : 'Connect the Run trigger to start streaming results.'}
-                                </p>
-                            ) : (
-                                <div className="space-y-6">
-                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                        {connectedGroups.map((group) => (
-                                            <div key={group.id} className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3">
-                                                <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
-                                                    {group.name}
-                                                </div>
-                                                <div className="h-40">
-                                                    <ResponsiveContainer width="100%" height="100%">
-                                                        <LineChart data={filteredSeries}>
-                                                            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                                            <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                            <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                            <Tooltip
-                                                                contentStyle={{
-                                                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                                    border: '1px solid rgba(148, 163, 184, 0.2)',
-                                                                    borderRadius: '12px',
-                                                                    color: '#e2e8f0',
-                                                                    fontSize: '11px',
-                                                                }}
-                                                            />
-                                                            {selectedExperiment?.variants?.map((variant, variantIdx) => (
-                                                                <Line
-                                                                    key={`${group.id}-${variant.name}`}
-                                                                    type="monotone"
-                                                                    dataKey={getGroupVariantKey(group.id, variant.name)}
-                                                                    stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
-                                                                    strokeWidth={2}
-                                                                    name={variant.name}
-                                                                    dot={false}
-                                                                />
-                                                            )) ||
-                                                                null}
-                                                        </LineChart>
-                                                    </ResponsiveContainer>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {(hypothesisNodes.length > 0 || metricNodesForCharts.length > 0) &&
-                                        isFlowReady &&
-                                        (isSimulating || isPaused) && (
-                                        <div>
-                                            <div className="mb-3 text-[0.65rem] font-semibold text-slate-500">
-                                                Hypotheses & Metrics
-                                            </div>
-                                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                                {hypothesisNodes.map((node) => (
-                                                    <div
-                                                        key={`hypothesis-${node.id}`}
-                                                        className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
-                                                    >
-                                                        <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
-                                                            {node.data?.hypothesis || node.label}
-                                                        </div>
-                                                        <div className="h-40">
-                                                            <ResponsiveContainer width="100%" height="100%">
-                                                                <LineChart data={aggregatedSeries}>
-                                                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                                    <Tooltip
-                                                                        contentStyle={{
-                                                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                                            border: '1px solid rgba(148, 163, 184, 0.2)',
-                                                                            borderRadius: '12px',
-                                                                            color: '#e2e8f0',
-                                                                            fontSize: '11px',
-                                                                        }}
-                                                                    />
-                                                                    {selectedExperiment?.variants?.map((variant, variantIdx) => (
-                                                                        <Line
-                                                                            key={`${node.id}-${variant.name}`}
-                                                                            type="monotone"
-                                                                            dataKey={variant.name}
-                                                                            stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
-                                                                            strokeWidth={2}
-                                                                            name={variant.name}
-                                                                            dot={false}
-                                                                        />
-                                                                    )) ||
-                                                                        null}
-                                                                </LineChart>
-                                                            </ResponsiveContainer>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                                {metricNodesForCharts.map((node) => (
-                                                    <div
-                                                        key={`metric-${node.id}`}
-                                                        className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
-                                                    >
-                                                        <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
-                                                            {node.data?.metric || node.label}
-                                                        </div>
-                                                        <div className="h-40">
-                                                            <ResponsiveContainer width="100%" height="100%">
-                                                                <LineChart data={aggregatedSeries}>
-                                                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                                    <Tooltip
-                                                                        contentStyle={{
-                                                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                                            border: '1px solid rgba(148, 163, 184, 0.2)',
-                                                                            borderRadius: '12px',
-                                                                            color: '#e2e8f0',
-                                                                            fontSize: '11px',
-                                                                        }}
-                                                                    />
-                                                                    {selectedExperiment?.variants?.map((variant, variantIdx) => (
-                                                                        <Line
-                                                                            key={`${node.id}-${variant.name}`}
-                                                                            type="monotone"
-                                                                            dataKey={variant.name}
-                                                                            stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
-                                                                            strokeWidth={2}
-                                                                            name={variant.name}
-                                                                            dot={false}
-                                                                        />
-                                                                    )) ||
-                                                                        null}
-                                                                </LineChart>
-                                                            </ResponsiveContainer>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        <SimulationOutput
+                            simulationSeries={simulationSeries}
+                            filteredSeries={filteredSeries}
+                            rangeStart={rangeStart}
+                            rangeEnd={rangeEnd}
+                            setRangeStart={setRangeStart}
+                            setRangeEnd={setRangeEnd}
+                            pickerOpen={pickerOpen}
+                            setPickerOpen={setPickerOpen}
+                            pickerPos={pickerPos}
+                            setPickerPos={setPickerPos}
+                            pickerRef={pickerRef}
+                            startRef={startRef}
+                            endRef={endRef}
+                            pickerMonth={pickerMonth}
+                            setPickerMonth={setPickerMonth}
+                            pickerValue={pickerValue}
+                            setPickerValue={setPickerValue}
+                            renderCalendar={renderCalendar}
+                            hours={hours}
+                            minutes={minutes}
+                            applyPickerValue={(value) => applyPickerValue(value)}
+                            selectedExperiment={selectedExperiment}
+                            connectedGroups={connectedGroups}
+                            hypothesisNodes={hypothesisNodes}
+                            metricNodesForCharts={metricNodesForCharts}
+                            aggregatedSeries={aggregatedSeries}
+                            isSimulating={isSimulating}
+                            isPaused={isPaused}
+                            flowConnected={flowConnected}
+                            isFlowReady={isFlowReady}
+                            getGroupVariantKey={getGroupVariantKey}
+                        />
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-
-            <div className="h-px w-full bg-slate-300/70"></div>
-            <details className="panel" open>
-                <summary className="cursor-pointer text-base font-bold text-slate-200">Simulation Details</summary>
-                <div className="mt-4 grid grid-cols-1 gap-6 text-[0.85rem] lg:grid-cols-[1.4fr_1fr_1fr]">
-                <div className="card">
-                    <h3 className="mb-4">Live Simulation Results</h3>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                        {[
-                            { label: 'Active Experiments', value: experiments.filter((exp) => exp.status === 'running').length.toString() },
-                            { label: 'Audience Segments', value: userGroups.length.toString() },
-                            { label: 'Signals Processed', value: signalCount.toLocaleString() || '0' },
-                        ].map((item) => (
-                            <div key={item.label} className="panel">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{item.label}</p>
-                                <p className="mt-3 text-2xl font-semibold text-slate-100">{item.value}</p>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flow-surface mt-6 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-                        <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-slate-500">
-                            <span>Latest Signals</span>
-                            <span className="text-emerald-300">Streaming</span>
-                        </div>
-                        <div className="mt-4 space-y-3">
-                            {topResults.length > 0 ? topResults.map((result) => (
-                                <div key={`${result.variant_a}-${result.variant_b}`} className="flex items-center gap-3 text-sm text-slate-200">
-                                    <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-                                    {result.variant_b} vs {result.variant_a}: {(result.effect_size * 100).toFixed(2)}% lift (p={result.p_value.toFixed(4)})
-                                </div>
-                            )) : (
-                                <div className="flex items-center gap-3 text-sm text-slate-200">
-                                    <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-                                    {selectedExperiment?.status === 'running'
-                                        ? 'Streaming analysis in progress.'
-                                        : 'Start an experiment to generate live results.'}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="card">
-                    <h3 className="mb-4">Action Inputs</h3>
-                    <div className="space-y-4">
-                        <div className="panel">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Experiment</p>
-                            <p className="mt-2 text-sm font-semibold text-slate-100">
-                                {selectedExperiment?.name || 'Add an experiment node'}
-                            </p>
-                        </div>
-                        <div className="panel">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Audience</p>
-                            <p className="mt-2 text-sm font-semibold text-slate-100">
-                                {selectedGroups[0]?.name || 'Add a user group node'}
-                            </p>
-                        </div>
-                        <div className="panel">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Hypothesis</p>
-                            <p className="mt-2 text-sm font-semibold text-slate-100">
-                                {hypothesisNodes[0]?.data?.hypothesis || selectedExperiment?.hypothesis?.alternative_hypothesis || 'No hypothesis configured.'}
-                            </p>
-                        </div>
-                        <div className="panel">
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Primary Metric</p>
-                            <p className="mt-2 text-sm font-semibold text-slate-100">
-                                {metricNodes[0]?.data?.metric || selectedExperiment?.primary_metric || 'Not set'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="card">
-                    <h3 className="mb-4">Component Details</h3>
-                    {selectedNode ? (
-                        <div className="space-y-4">
-                            <div className="panel">
-                                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Node</p>
-                                <p className="mt-2 text-sm font-semibold text-slate-100">{selectedNode.label}</p>
-                                <p className="mt-1 text-xs text-slate-500">{selectedNode.kind.replace('-', ' ')}</p>
-                            </div>
-                            {selectedNode.data?.experimentId && (
-                                <div className="panel">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Experiment</p>
-                                    <p className="mt-2 text-sm font-semibold text-slate-100">
-                                        {experiments.find((exp) => exp.id === selectedNode.data?.experimentId)?.name}
-                                    </p>
-                                </div>
-                            )}
-                            {selectedNode.data?.groupId && (
-                                <div className="panel">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">User Group</p>
-                                    <p className="mt-2 text-sm font-semibold text-slate-100">
-                                        {userGroups.find((group) => group.id === selectedNode.data?.groupId)?.name}
-                                    </p>
-                                </div>
-                            )}
-                            {selectedNode.data?.hypothesis && (
-                                <div className="panel">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Hypothesis</p>
-                                    <p className="mt-2 text-sm font-semibold text-slate-100">{selectedNode.data.hypothesis}</p>
-                                </div>
-                            )}
-                            {selectedNode.data?.metric && (
-                                <div className="panel">
-                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Metric</p>
-                                    <p className="mt-2 text-sm font-semibold text-slate-100">{selectedNode.data.metric}</p>
-                                </div>
-                            )}
-                            <button className="btn-danger w-full" onClick={() => removeNode(selectedNode.id)}>
-                                Delete Node
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="panel">
-                            <p className="text-sm text-slate-400">Select a node on the canvas to view details.</p>
-                        </div>
-                    )}
-                </div>
-                </div>
-            </details>
+            <SimulationDetails
+                experiments={experiments}
+                userGroups={userGroups}
+                selectedExperiment={selectedExperiment}
+                selectedGroups={selectedGroups}
+                hypothesisNodes={hypothesisNodes}
+                metricNodes={metricNodes}
+                signalCount={signalCount}
+                topResults={topResults}
+                selectedNode={selectedNode}
+                removeNode={removeNode}
+            />
         </div>
     );
 };

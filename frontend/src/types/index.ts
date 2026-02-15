@@ -215,7 +215,7 @@ export interface AiChatRequest {
 export interface AiChatResponse {
     model: string;
     message: AiChatMessage;
-    usage?: Record<string, any>;
+    usage?: Record<string, unknown>;
 }
 
 export interface AiModelsResponse {
@@ -273,7 +273,7 @@ export interface IngestEventRequest {
     variant: string;
     metric_name: string;
     metric_value: number;
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
 }
 
 export interface Session {
@@ -282,7 +282,7 @@ export interface Session {
     entry_url: string;
     referrer?: string;
     user_agent?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     started_at: string;
     ended_at?: string;
     duration_seconds?: number;
@@ -300,9 +300,16 @@ export interface ActivityEvent {
     selector?: string;
     x?: number;
     y?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     timestamp: string;
 }
+
+export type ReplayEvent = {
+    type: number;
+    timestamp: number;
+    data: unknown;
+    [key: string]: unknown;
+};
 
 export interface StartSessionRequest {
     session_id?: string;
@@ -310,7 +317,7 @@ export interface StartSessionRequest {
     entry_url: string;
     referrer?: string;
     user_agent?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }
 
 export interface StartSessionResponse {
@@ -332,13 +339,13 @@ export interface TrackEventRequest {
     selector?: string;
     x?: number;
     y?: number;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
     timestamp?: string;
 }
 
 export interface TrackReplayRequest {
     session_id: string;
-    events: Record<string, any>[];
+    events: Record<string, unknown>[];
 }
 
 export interface ListSessionsResponse {
@@ -352,7 +359,7 @@ export interface AssignUserRequest {
     user_id: string;
     experiment_id: string;
     group_id: string;
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
 }
 
 export enum FeatureFlagStatus {
@@ -422,7 +429,7 @@ export interface CreateFeatureGateRequest {
 }
 
 export interface EvaluateFeatureGateRequest {
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
 }
 
 export interface FeatureGateEvaluationResponse {
@@ -439,7 +446,7 @@ export interface MetricEvent {
     variant: string;
     metric_name: string;
     metric_value: number;
-    attributes?: Record<string, any>;
+    attributes?: Record<string, unknown>;
     timestamp: string;
 }
 

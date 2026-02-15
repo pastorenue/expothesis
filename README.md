@@ -83,14 +83,12 @@ We provide a specialized data generator to simulate real-world traffic and verif
 
 ## 🔐 Auth & Default Access
 
-Auth is enabled by default with email + OTP, plus optional TOTP (authenticator app).
+Auth is enabled by default with email + password. If a user enables TOTP, login becomes **Authenticator-only**.
 
 - Default admin user is created on first boot:
   - Email: `admin@expothesis.local`
   - Password: `admin`
-- OTP:
-  - Delivered via Mailpit at `http://localhost:8025`
-  - If `ALLOW_DEV_OTP=1`, the login response includes `dev_code`. If testing via the UI, open the network tab in browser dev tools to see the OTP code in the response.
+- Email OTP is disabled for login (no SMTP requirement for auth). TOTP is the only second factor.
 
 Environment variables (see `docker-compose.yml`):
 ```bash
@@ -171,10 +169,10 @@ curl -X POST http://localhost:8080/api/auth/login \\
   -H 'Content-Type: application/json' \\
   -d '{"email":"admin@expothesis.local","password":"admin"}'
 
-# Verify OTP (step 2)
+# Verify (step 2)
 curl -X POST http://localhost:8080/api/auth/verify-otp \\
   -H 'Content-Type: application/json' \\
-  -d '{"email":"admin@expothesis.local","code":"<OTP_OR_DEV_CODE>"}'
+  -d '{"email":"admin@expothesis.local","code":"","totp_code":"<TOTP_IF_ENABLED>"}'
 
 # Feature flags SDK evaluation
 curl -X POST http://localhost:8080/api/sdk/feature-flags/evaluate \\

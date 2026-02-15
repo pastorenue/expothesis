@@ -1,30 +1,19 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-    AreaChart,
-    Area,
-    BarChart,
-    Bar,
-    LineChart,
-    Line,
-    PieChart,
-    Pie,
-    Cell,
-    RadarChart,
-    Radar,
-    PolarGrid,
-    PolarAngleAxis,
-    PolarRadiusAxis,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    Legend,
-    ResponsiveContainer,
-    ReferenceLine,
-} from 'recharts';
 import { analyticsApi } from '../services/api';
-import { LoadingSpinner, StatCard } from './Common';
+import { LoadingSpinner } from './Common';
+import { AlertFeedPanel } from './analytics-monitoring/AlertFeedPanel';
+import { AnomalyAlertsChart } from './analytics-monitoring/AnomalyAlertsChart';
+import { DashboardHeader } from './analytics-monitoring/DashboardHeader';
+import { ExposureFunnelCard } from './analytics-monitoring/ExposureFunnelCard';
+import { GuardrailHealthChart } from './analytics-monitoring/GuardrailHealthChart';
+import { MetricCoverageCard } from './analytics-monitoring/MetricCoverageCard';
+import { MetricsInventoryTable } from './analytics-monitoring/MetricsInventoryTable';
+import { OverviewStats } from './analytics-monitoring/OverviewStats';
+import { PrimaryMetricsChart } from './analytics-monitoring/PrimaryMetricsChart';
+import { SegmentLiftRadar } from './analytics-monitoring/SegmentLiftRadar';
+import { SrmCard } from './analytics-monitoring/SrmCard';
+import { ThroughputChart } from './analytics-monitoring/ThroughputChart';
 
 const tooltipStyles = {
     backgroundColor: 'var(--chart-tooltip-bg)',
@@ -76,22 +65,13 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
 
     const formatCompact = (value: number) =>
         new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
-    const formatPercent = (value: number, decimals = 2) => `${value.toFixed(decimals)}%`;
+    const formatPercent = React.useCallback((value: number, decimals = 2) => `${value.toFixed(decimals)}%`, []);
     const formatPp = (value: number) => `${value >= 0 ? '+' : ''}${value.toFixed(2)}pp`;
     const formatSeconds = (value: number) => {
         if (value < 60) return `${value}s`;
         if (value < 3600) return `${Math.round(value / 60)}m`;
         return `${Math.round(value / 3600)}h`;
     };
-
-    type StatTrend = 'up' | 'down' | 'neutral';
-    interface OverviewStat {
-        title: string;
-        value: string | number;
-        subtitle?: string;
-        trend?: StatTrend;
-        icon?: React.ReactNode;
-    }
 
     const summary = data?.summary;
     const coverageSlices =
@@ -141,7 +121,7 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
     }, [data, formatPercent]);
 
     if (isLoading && !data) {
-        return <LoadingSpinner />;
+        return <LoadingSpinner fullHeight />;
     }
 
     const trendFor = (value?: number) => {
@@ -151,7 +131,13 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
         return 'neutral' as const;
     };
 
-    const overviewStats: OverviewStat[] = [
+    const overviewStats: Array<{
+        title: string;
+        value: string | number;
+        subtitle?: string;
+        trend?: 'up' | 'down' | 'neutral';
+        icon?: React.ReactNode;
+    }> = [
         {
             title: 'Active Experiments',
             value: summary ? formatCompact(summary.active_experiments) : '—',
@@ -200,360 +186,59 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <h1>Insights</h1>
-                    <p className="mt-1 text-slate-400">
-                        Live experiment observability, guardrails, and metric health across your platform.
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className="badge-info">Environment: {summary?.environment ?? '—'}</span>
-                    <span className="badge-gray">
-                        Last updated: {summary?.last_updated ? new Date(summary.last_updated).toLocaleTimeString() : '—'}
-                    </span>
-                    <span className="badge-gray">
-                        Freshness: {summary ? formatSeconds(summary.data_freshness_seconds) : '—'}
-                    </span>
-                    <span className="badge-success">Streaming: {summary ? 'Healthy' : 'Loading'}</span>
-                </div>
-            </div>
+            <DashboardHeader
+                environment={summary?.environment}
+                lastUpdated={summary?.last_updated}
+                dataFreshnessSeconds={summary?.data_freshness_seconds}
+                streamingStatus={summary ? 'Healthy' : 'Loading'}
+                formatSeconds={formatSeconds}
+            />
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-                {overviewStats.map((stat) => (
-                    <StatCard
-                        key={stat.title}
-                        title={stat.title}
-                        value={stat.value}
-                        subtitle={stat.subtitle}
-                        trend={stat.trend}
-                        icon={stat.icon}
-                    />
-                ))}
-            </div>
+            <OverviewStats stats={overviewStats} />
 
             <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Experiment Throughput</h3>
-                        <span className="badge-gray">Assignments vs exposures</span>
-                    </div>
-                    <div className="mt-4 h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={data?.throughput ?? []}>
-                                <defs>
-                                    <linearGradient id="exposureFill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.4} />
-                                        <stop offset="95%" stopColor="#38bdf8" stopOpacity={0.05} />
-                                    </linearGradient>
-                                    <linearGradient id="assignFill" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#22c55e" stopOpacity={0.35} />
-                                        <stop offset="95%" stopColor="#22c55e" stopOpacity={0.05} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                <XAxis dataKey="time" stroke="#94a3b8" />
-                                <YAxis stroke="#94a3b8" />
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
-                                <Area type="monotone" dataKey="assignments" stroke="#22c55e" fill="url(#assignFill)" />
-                                <Area type="monotone" dataKey="exposures" stroke="#38bdf8" fill="url(#exposureFill)" />
-                                <Line type="monotone" dataKey="conversions" stroke="#fbbf24" strokeWidth={2} />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <ThroughputChart data={data?.throughput ?? []} tooltipStyles={tooltipStyles} />
 
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Metric Coverage</h3>
-                        <span className="badge-gray">Tracked metrics</span>
-                    </div>
-                    <div className="mt-4 h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={coverageSlices}
-                                    dataKey="value"
-                                    nameKey="name"
-                                    innerRadius={60}
-                                    outerRadius={90}
-                                    paddingAngle={4}
-                                >
-                                    {coverageSlices.map((entry) => (
-                                        <Cell key={entry.name} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
-                            <span className="text-slate-400">Total metrics</span>
-                            <span className="font-semibold text-slate-100">
-                                {data?.metric_coverage_totals?.total_metrics ?? 0}
-                            </span>
-                        </div>
-                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
-                            <span className="text-slate-400">Guardrails</span>
-                            <span className="font-semibold text-slate-100">
-                                {data?.metric_coverage_totals?.guardrails ?? 0}
-                            </span>
-                        </div>
-                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
-                            <span className="text-slate-400">Diagnostics</span>
-                            <span className="font-semibold text-slate-100">
-                                {data?.metric_coverage_totals?.diagnostics ?? 0}
-                            </span>
-                        </div>
-                        <div className="insights-tile flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
-                            <span className="text-slate-400">Holdout metrics</span>
-                            <span className="font-semibold text-slate-100">
-                                {data?.metric_coverage_totals?.holdout_metrics ?? 0}
-                            </span>
-                        </div>
-                    </div>
-                </div>
+                <MetricCoverageCard
+                    slices={coverageSlices}
+                    totals={data?.metric_coverage_totals}
+                    tooltipStyles={tooltipStyles}
+                />
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Primary Metrics Trend</h3>
-                        <span className="badge-gray">7-day performance</span>
-                    </div>
-                    <div className="mt-4 h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={data?.primary_metric_trend ?? []}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                <XAxis dataKey="day" stroke="#94a3b8" />
-                                <YAxis stroke="#94a3b8" />
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
-                                <Line type="monotone" dataKey="conversion" stroke="#38bdf8" strokeWidth={2} />
-                                <Line type="monotone" dataKey="revenue" stroke="#22c55e" strokeWidth={2} />
-                                <Line type="monotone" dataKey="retention" stroke="#fbbf24" strokeWidth={2} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <PrimaryMetricsChart data={data?.primary_metric_trend ?? []} tooltipStyles={tooltipStyles} />
 
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Guardrail Health</h3>
-                        <span className="badge-warning">2 breaches</span>
-                    </div>
-                    <div className="mt-4 h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={guardrailData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                <XAxis dataKey="day" stroke="#94a3b8" />
-                                <YAxis stroke="#94a3b8" />
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
-                                <ReferenceLine y={250} stroke="#f59e0b" strokeDasharray="4 4" />
-                                <Line type="monotone" dataKey="latency" stroke="#f59e0b" strokeWidth={2} />
-                                <Line type="monotone" dataKey="errorRate" stroke="#f87171" strokeWidth={2} />
-                                <Line type="monotone" dataKey="crashRate" stroke="#38bdf8" strokeWidth={2} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <GuardrailHealthChart data={guardrailData} tooltipStyles={tooltipStyles} />
             </div>
 
             <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Sample Ratio Mismatch (SRM)</h3>
-                        <span className="badge-danger">1 active alert</span>
-                    </div>
-                    <div className="mt-4 h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={data?.srm?.variants ?? []}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                <XAxis dataKey="variant" stroke="#94a3b8" />
-                                <YAxis stroke="#94a3b8" />
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
-                                <Bar dataKey="expected" fill="#38bdf8" name="Expected %" />
-                                <Bar dataKey="observed" fill="#f59e0b" name="Observed %" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                    <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div className="insights-tile rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
-                            <p className="text-slate-400">p-value</p>
-                            <p className="text-lg font-semibold text-rose-300">
-                                {data?.srm?.summary?.p_value?.toFixed(3) ?? '—'}
-                            </p>
-                        </div>
-                        <div className="insights-tile rounded-lg border border-slate-800/70 bg-slate-950/40 px-3 py-2">
-                            <p className="text-slate-400">Allocation drift</p>
-                            <p className="text-lg font-semibold text-amber-200">
-                                {data?.srm?.summary ? `${data.srm.summary.allocation_drift.toFixed(2)}%` : '—'}
-                            </p>
-                        </div>
-                    </div>
-                    <div className="mt-4 rounded-xl border border-slate-800/70 bg-slate-950/40 p-3 text-sm text-slate-300">
-                        <span className="text-xs uppercase tracking-[0.2em] text-slate-400">AI Note</span>
-                        <p className="mt-2">
-                            {data?.srm?.summary?.p_value !== undefined && data.srm.summary.p_value < 0.05
-                                ? 'SRM is significant. Validate assignment hashing, gate rules, and traffic splits before scaling.'
-                                : 'SRM within tolerance. Continue monitoring allocation drift as traffic ramps.'}
-                        </p>
-                    </div>
-                </div>
+                <SrmCard variants={data?.srm?.variants ?? []} summary={data?.srm?.summary} tooltipStyles={tooltipStyles} />
 
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Exposure Funnel</h3>
-                        <span className="badge-gray">Last 24h</span>
-                    </div>
-                    <div className="mt-4 h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={data?.funnel ?? []} layout="vertical">
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                <XAxis type="number" stroke="#94a3b8" />
-                                <YAxis dataKey="step" type="category" stroke="#94a3b8" width={110} />
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Bar dataKey="users" fill="#38bdf8" radius={[0, 6, 6, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <ExposureFunnelCard data={data?.funnel ?? []} tooltipStyles={tooltipStyles} />
             </div>
 
             <div className="grid gap-6 lg:grid-cols-2">
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Anomaly Alerts</h3>
-                        <span className="badge-gray">Last 7 days</span>
-                    </div>
-                    <div className="mt-4 h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={data?.anomaly_alerts ?? []}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                <XAxis dataKey="day" stroke="#94a3b8" />
-                                <YAxis stroke="#94a3b8" />
-                                <Tooltip contentStyle={tooltipStyles} />
-                                <Legend wrapperStyle={{ color: 'var(--chart-legend-text)' }} />
-                                <Bar dataKey="critical" stackId="a" fill="#f87171" />
-                                <Bar dataKey="warning" stackId="a" fill="#fbbf24" />
-                                <Bar dataKey="info" stackId="a" fill="#38bdf8" />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <AnomalyAlertsChart data={data?.anomaly_alerts ?? []} tooltipStyles={tooltipStyles} />
 
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Segment Lift Radar</h3>
-                        <span className="badge-gray">Relative uplift %</span>
-                    </div>
-                    <div className="mt-4 h-[280px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <RadarChart data={data?.segment_lift ?? []}>
-                                <PolarGrid stroke="#1f2937" />
-                                <PolarAngleAxis dataKey="segment" stroke="#94a3b8" />
-                                <PolarRadiusAxis stroke="#94a3b8" />
-                                <Radar dataKey="lift" stroke="#38bdf8" fill="#38bdf8" fillOpacity={0.25} />
-                                <Tooltip contentStyle={tooltipStyles} />
-                            </RadarChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
+                <SegmentLiftRadar data={data?.segment_lift ?? []} tooltipStyles={tooltipStyles} />
             </div>
 
             <div className="grid gap-6 lg:grid-cols-[1.5fr_0.9fr]">
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Metrics Inventory</h3>
-                        <span className="badge-gray">Tracking + guardrails</span>
-                    </div>
-                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-800/70">
-                        <div className="grid grid-cols-[1.4fr_0.8fr_0.6fr_0.6fr_0.7fr] gap-3 bg-slate-950/60 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            <span>Metric</span>
-                            <span>Category</span>
-                            <span>Freshness</span>
-                            <span>Owner</span>
-                            <span>Status</span>
-                        </div>
-                        <div className="divide-y divide-slate-800/70">
-                            {(data?.metric_inventory ?? []).map((metric) => (
-                                <div key={metric.name} className="grid grid-cols-[1.4fr_0.8fr_0.6fr_0.6fr_0.7fr] gap-3 px-4 py-3 text-sm text-slate-200">
-                                    <div>
-                                        <div className="font-semibold text-slate-100">{metric.name}</div>
-                                        <div className="text-xs text-slate-500">
-                                            Guardrail: {metric.guardrail ?? '—'}
-                                        </div>
-                                    </div>
-                                    <span className="text-slate-300">{metric.category}</span>
-                                    <span className="text-slate-300">{formatSeconds(metric.freshness_seconds)}</span>
-                                    <span className="text-slate-300">{metric.owner}</span>
-                                    <span className={statusBadge(metric.status)}>{metric.status}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
+                <MetricsInventoryTable
+                    metrics={data?.metric_inventory ?? []}
+                    formatSeconds={formatSeconds}
+                    statusBadge={statusBadge}
+                />
 
-                <div className="card">
-                    <div className="flex items-center justify-between">
-                        <h3>Alert Feed</h3>
-                        <span className="badge-gray">Realtime ops</span>
-                    </div>
-                    {alertTriage && (
-                        <div className="insights-card mt-4 rounded-xl border border-slate-800/70 bg-slate-950/50 p-4">
-                            <div className="flex items-center justify-between">
-                                <p className="text-sm font-semibold text-slate-100">AI Triage Summary</p>
-                                <span className="badge-gray">
-                                    {(alertTriage.counts.critical ?? 0)} critical · {(alertTriage.counts.warning ?? 0)} warning
-                                </span>
-                            </div>
-                            <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                                {alertTriage.recommendations.map((item, idx) => (
-                                    <li key={idx}>• {item}</li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-                    <div className="mt-4 space-y-3">
-                        {(data?.alert_feed ?? []).map((alert) => (
-                            <div key={alert.title} className="insights-card rounded-xl border border-slate-800/70 bg-slate-950/50 p-4">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-sm font-semibold text-slate-100">{alert.title}</p>
-                                    <span className={severityBadge(alert.severity)}>{alert.severity}</span>
-                                </div>
-                                <p className="mt-1 text-xs text-slate-500">{alert.time}</p>
-                                <p className="mt-2 text-sm text-slate-300">{alert.detail}</p>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="mt-4 grid gap-3">
-                        <div className="insights-tile rounded-xl border border-slate-800/70 bg-slate-950/40 p-3 text-sm">
-                            <div className="flex items-center justify-between">
-                                <span className="text-slate-400">Data freshness</span>
-                                <span className="text-emerald-300">
-                                    {data?.system_health ? formatSeconds(data.system_health.data_freshness_seconds) : '—'}
-                                </span>
-                            </div>
-                            <div className="mt-2 flex items-center justify-between">
-                                <span className="text-slate-400">SDK error rate</span>
-                                <span className="text-amber-200">
-                                    {data?.system_health ? formatPercent(data.system_health.sdk_error_rate, 2) : '—'}
-                                </span>
-                            </div>
-                            <div className="mt-2 flex items-center justify-between">
-                                <span className="text-slate-400">Evaluation latency</span>
-                                <span className="text-slate-100">
-                                    {data?.system_health ? `${data.system_health.evaluation_latency_ms.toFixed(1)}ms` : '—'}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <AlertFeedPanel
+                    alertTriage={alertTriage}
+                    alertFeed={data?.alert_feed ?? []}
+                    systemHealth={data?.system_health}
+                    severityBadge={severityBadge}
+                    formatSeconds={formatSeconds}
+                    formatPercent={formatPercent}
+                />
             </div>
         </div>
     );
