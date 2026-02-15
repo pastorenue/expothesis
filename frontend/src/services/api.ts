@@ -91,6 +91,12 @@ export const userGroupApi = {
     get: (id: string) =>
         api.get<UserGroup>(`/user-groups/${id}`),
 
+    update: (id: string, data: UpdateUserGroupRequest) =>
+        api.put<UserGroup>(`/user-groups/${id}`, data),
+
+    delete: (id: string) =>
+        api.delete<void>(`/user-groups/${id}`),
+
     move: (id: string, data: MoveUserGroupRequest) =>
         api.post(`/user-groups/${id}/move`, data),
 

@@ -38,21 +38,26 @@ export const UserGroupManager: React.FC = () => {
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: typeof editForm }) =>
-            userGroupApi.update(id, data),
-        onSuccess: (response) => {
+        mutationFn: async ({ id, data }: { id: string; data: typeof editForm }) => {
+            const response = await userGroupApi.update(id, data);
+            return response.data;
+        },
+        onSuccess: (group) => {
             queryClient.setQueryData(['userGroups'], (oldData: any) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
-                return existing.map((item: UserGroup) => (item.id === response.data.id ? response.data : item));
+                return existing.map((item: UserGroup) => (item.id === group.id ? group : item));
             });
-            setSelectedGroup(response.data);
+            setSelectedGroup(group);
             setIsEditing(false);
         },
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (id: string) => userGroupApi.delete(id),
-        onSuccess: (_, id) => {
+        mutationFn: async (id: string) => {
+            await userGroupApi.delete(id);
+            return id;
+        },
+        onSuccess: (id) => {
             queryClient.setQueryData(['userGroups'], (oldData: any) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return existing.filter((item: UserGroup) => item.id !== id);
