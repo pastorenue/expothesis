@@ -81,6 +81,40 @@ impl UserGroupService {
         Ok(groups)
     }
 
+    pub async fn update_user_group(
+        &self,
+        group_id: Uuid,
+        req: UpdateUserGroupRequest,
+    ) -> Result<UserGroup> {
+        let mut group = self.get_user_group(group_id).await?;
+
+        if let Some(name) = req.name {
+            group.name = name;
+        }
+        if let Some(description) = req.description {
+            group.description = description;
+        }
+        if let Some(assignment_rule) = req.assignment_rule {
+            group.assignment_rule = assignment_rule;
+        }
+
+        group.updated_at = Utc::now();
+        self.save_user_group(&group).await?;
+        Ok(group)
+    }
+
+    pub async fn delete_user_group(&self, group_id: Uuid) -> Result<()> {
+        self.db
+            .client()
+            .query("ALTER TABLE user_groups DELETE WHERE id = ?")
+            .bind(group_id.to_string())
+            .execute()
+            .await
+            .context("Failed to delete user group")?;
+
+        Ok(())
+    }
+
     pub async fn assign_user_to_variant(
         &self,
         user_id: &str,

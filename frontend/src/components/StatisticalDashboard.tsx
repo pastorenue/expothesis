@@ -284,10 +284,10 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                         <YAxis stroke="#94a3b8" />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                backgroundColor: 'var(--chart-tooltip-bg)',
+                                border: '1px solid var(--chart-tooltip-border)',
                                 borderRadius: '12px',
-                                color: '#e2e8f0',
+                                color: 'var(--chart-tooltip-text)',
                             }}
                         />
                         <Legend wrapperStyle={{ color: '#e2e8f0' }} />
@@ -395,10 +395,10 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                         <YAxis stroke="#94a3b8" />
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                border: '1px solid rgba(148, 163, 184, 0.2)',
+                                backgroundColor: 'var(--chart-tooltip-bg)',
+                                border: '1px solid var(--chart-tooltip-border)',
                                 borderRadius: '12px',
-                                color: '#e2e8f0',
+                                color: 'var(--chart-tooltip-text)',
                             }}
                         />
                         <Legend wrapperStyle={{ color: '#e2e8f0' }} />

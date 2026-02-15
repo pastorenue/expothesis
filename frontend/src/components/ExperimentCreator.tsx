@@ -14,7 +14,7 @@ import {
     AnalysisEngine,
     HealthCheckDirection,
 } from '../types';
-import { userGroupApi, featureFlagApi, featureGateApi } from '../services/api';
+import { userGroupApi, featureFlagApi, featureGateApi, experimentApi } from '../services/api';
 
 interface ExperimentCreatorProps {
     onSubmit: (experiment: CreateExperimentRequest) => void;
@@ -23,6 +23,10 @@ interface ExperimentCreatorProps {
 
 export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, onCancel }) => {
     const [step, setStep] = useState(1);
+    const [metricInput, setMetricInput] = useState('');
+    const [groupInput, setGroupInput] = useState('');
+    const [showGroupOptions, setShowGroupOptions] = useState(false);
+    const [showMetricOptions, setShowMetricOptions] = useState(false);
     const [formData, setFormData] = useState<CreateExperimentRequest>({
         name: '',
         description: '',
@@ -70,6 +74,49 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
         },
     });
 
+    const { data: experiments = [] } = useQuery({
+        queryKey: ['experiments'],
+        queryFn: async () => {
+            const response = await experimentApi.list();
+            return response.data;
+        },
+    });
+
+    const metricOptions = React.useMemo(() => {
+        const options = new Set<string>();
+        experiments.forEach((experiment) => {
+            if (!experiment.primary_metric) return;
+            experiment.primary_metric
+                .split(',')
+                .map((metric) => metric.trim())
+                .filter(Boolean)
+                .forEach((metric) => options.add(metric));
+        });
+        return Array.from(options).sort();
+    }, [experiments]);
+
+    const filteredGroups = React.useMemo(() => {
+        const query = groupInput.trim().toLowerCase();
+        return availableGroups
+            .filter((group) => !formData.user_groups?.includes(group.id))
+            .filter((group) => group.name.toLowerCase().includes(query))
+            .slice(0, 6);
+    }, [availableGroups, formData.user_groups, groupInput]);
+
+    const filteredMetrics = React.useMemo(() => {
+        const query = metricInput.trim().toLowerCase();
+        const selected = new Set(
+            (formData.primary_metric || '')
+                .split(',')
+                .map((metric) => metric.trim())
+                .filter(Boolean),
+        );
+        return metricOptions
+            .filter((metric) => !selected.has(metric))
+            .filter((metric) => metric.toLowerCase().includes(query))
+            .slice(0, 6);
+    }, [formData.primary_metric, metricInput, metricOptions]);
+
     const toggleUserGroup = (groupId: string) => {
         setFormData((prev: CreateExperimentRequest) => {
             const current = prev.user_groups || [];
@@ -78,6 +125,43 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                 : [...current, groupId];
             return { ...prev, user_groups: next };
         });
+    };
+
+    const addUserGroupByName = (raw: string) => {
+        const trimmed = raw.trim();
+        if (!trimmed) return;
+        const match = availableGroups.find((group) => group.name.toLowerCase() === trimmed.toLowerCase());
+        if (match) {
+            setFormData((prev: CreateExperimentRequest) => {
+                const current = prev.user_groups || [];
+                if (current.includes(match.id)) return prev;
+                return { ...prev, user_groups: [...current, match.id] };
+            });
+        }
+        setGroupInput('');
+    };
+
+    const setPrimaryMetric = (value: string) => {
+        const trimmed = value.trim();
+        if (!trimmed) return;
+        const metrics = (formData.primary_metric || '')
+            .split(',')
+            .map((metric) => metric.trim())
+            .filter(Boolean);
+        if (!metrics.includes(trimmed)) {
+            const next = [...metrics, trimmed];
+            updateField('primary_metric', next.join(', '));
+        }
+        setMetricInput('');
+    };
+
+    const removePrimaryMetric = (metric: string) => {
+        const metrics = (formData.primary_metric || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .filter((value) => value !== metric);
+        updateField('primary_metric', metrics.join(', '));
     };
 
     const updateField = (field: keyof CreateExperimentRequest, value: any) => {
@@ -162,10 +246,10 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
     const renderStepIndicator = () => (
         <div className="mb-8 flex justify-between">
             {['Basics', 'Hypothesis', 'Variants', 'Review'].map((label, idx) => (
-                <div key={idx} className="flex flex-1 items-center">
+                <div key={idx} className="flex flex-1 items-start">
                     <div className="flex flex-col items-center">
                         <div
-                            className={`flex h-10 w-10 items-center justify-center rounded-full ${step > idx + 1
+                            className={`step-circle flex h-10 w-10 items-center justify-center rounded-full ${step > idx + 1
                                 ? 'bg-emerald-400 text-slate-900'
                                 : step === idx + 1
                                     ? 'bg-cyan-400 text-slate-900'
@@ -177,7 +261,9 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                         <span className="mt-2 text-sm font-medium text-slate-300">{label}</span>
                     </div>
                     {idx < 3 && (
-                        <div className={`mx-4 h-1 flex-1 ${step > idx + 1 ? 'bg-emerald-400' : 'bg-slate-800'}`} />
+                        <div
+                            className={`step-connector mx-4 mt-5 h-1 flex-1 rounded-full ${step > idx + 1 ? 'step-connector-active' : 'step-connector-inactive'}`}
+                        />
                     )}
                 </div>
             ))}
@@ -216,19 +302,68 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                     <div>
                         <label className="label">Target User Groups</label>
                         {availableGroups.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-2 mt-2">
-                                {availableGroups.map((group) => (
-                                    <button
-                                        key={group.id}
-                                        onClick={() => toggleUserGroup(group.id)}
-                                        className={`p-2 text-sm border rounded-md transition-colors ${formData.user_groups?.includes(group.id)
-                                            ? 'bg-cyan-500/10 border-cyan-400 text-cyan-200'
-                                            : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:border-slate-600'
-                                            }`}
-                                    >
-                                        {group.name} ({group.size})
-                                    </button>
-                                ))}
+                            <div className="space-y-2">
+                                <div className="chip-input rounded-xl border border-slate-700/80 bg-slate-950/50 px-3 py-2 text-sm text-slate-100">
+                                    <div className="chip-stack flex flex-wrap items-center gap-2">
+                                        {(formData.user_groups || []).map((groupId) => {
+                                            const group = availableGroups.find((item) => item.id === groupId);
+                                            if (!group) return null;
+                                            return (
+                                                <span
+                                                    key={group.id}
+                                                    className="chip-pill inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-cyan-400 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200"
+                                                >
+                                                    {group.name}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleUserGroup(group.id)}
+                                                        className="text-cyan-200/70 hover:text-cyan-100"
+                                                        aria-label={`Remove ${group.name}`}
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            );
+                                        })}
+                                        <input
+                                            type="text"
+                                            className="chip-text flex-[1_1_200px] min-w-[200px] bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+                                            value={groupInput}
+                                            onChange={(e) => setGroupInput(e.target.value)}
+                                            onFocus={() => setShowGroupOptions(true)}
+                                            onBlur={() => {
+                                                setShowGroupOptions(false);
+                                                addUserGroupByName(groupInput);
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === ',') {
+                                                    e.preventDefault();
+                                                    addUserGroupByName(groupInput);
+                                                }
+                                            }}
+                                            placeholder="Type group name and press Enter"
+                                        />
+                                    </div>
+                                </div>
+                                {showGroupOptions && filteredGroups.length > 0 && (
+                                    <div className="mt-2 rounded-xl border border-slate-800/70 bg-slate-950/80 p-2">
+                                        {filteredGroups.map((group) => (
+                                            <button
+                                                key={group.id}
+                                                type="button"
+                                                onMouseDown={(event) => event.preventDefault()}
+                                                onClick={() => {
+                                                    addUserGroupByName(group.name);
+                                                    setShowGroupOptions(false);
+                                                }}
+                                                className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-300 hover:bg-slate-900/70"
+                                            >
+                                                <span>{group.name}</span>
+                                                <span className="text-xs text-slate-500">{group.size}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <p className="text-sm text-slate-500 italic">No user groups available. Experiment will target all users by default.</p>
@@ -236,13 +371,67 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                     </div>
                     <div>
                         <label className="label">Primary Metric</label>
-                        <input
-                            type="text"
-                            className="input"
-                            value={formData.primary_metric}
-                            onChange={(e) => updateField('primary_metric', e.target.value)}
-                            placeholder="e.g., conversion_rate, average_order_value"
-                        />
+                        <div className="chip-input rounded-xl border border-slate-700/80 bg-slate-950/50 px-3 py-2 text-sm text-slate-100">
+                            <div className="chip-stack flex flex-wrap items-center gap-2">
+                                {(formData.primary_metric || '')
+                                    .split(',')
+                                    .map((metric) => metric.trim())
+                                    .filter(Boolean)
+                                    .map((metric) => (
+                                        <span
+                                            key={metric}
+                                            className="chip-pill inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-cyan-400 bg-cyan-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200"
+                                        >
+                                            {metric}
+                                            <button
+                                                type="button"
+                                                onClick={() => removePrimaryMetric(metric)}
+                                                className="text-cyan-200/70 hover:text-cyan-100"
+                                                aria-label={`Remove ${metric}`}
+                                            >
+                                                ×
+                                            </button>
+                                        </span>
+                                    ))}
+                                <input
+                                    type="text"
+                                    className="chip-text flex-[1_1_200px] min-w-[200px] bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+                                    value={metricInput}
+                                    onChange={(e) => setMetricInput(e.target.value)}
+                                    onFocus={() => setShowMetricOptions(true)}
+                                    onBlur={() => {
+                                        setShowMetricOptions(false);
+                                        setPrimaryMetric(metricInput);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' || e.key === ',') {
+                                            e.preventDefault();
+                                            setPrimaryMetric(metricInput);
+                                        }
+                                    }}
+                                    placeholder="Type metric name and press Enter"
+                                />
+                            </div>
+                        </div>
+                        {showMetricOptions && filteredMetrics.length > 0 && (
+                            <div className="mt-2 rounded-xl border border-slate-800/70 bg-slate-950/80 p-2">
+                                {filteredMetrics.map((metric) => (
+                                    <button
+                                        key={metric}
+                                        type="button"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={() => {
+                                            setPrimaryMetric(metric);
+                                            setShowMetricOptions(false);
+                                        }}
+                                        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-300 hover:bg-slate-900/70"
+                                    >
+                                        <span>{metric}</span>
+                                        <span className="text-xs text-slate-500">Metric</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                         <div>
@@ -325,7 +514,7 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                             <p className="mt-1 text-xs text-slate-500">Tie gates to feature flags for rollout control.</p>
                         </div>
                     </div>
-                    <div className="rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
+                    <div className="health-check-panel rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
                         <div className="flex items-center justify-between">
                             <h4 className="font-semibold text-slate-100">Health Checks</h4>
                             <button onClick={addHealthCheck} className="btn-secondary">
@@ -337,7 +526,7 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
                         ) : (
                             <div className="mt-4 space-y-3">
                                 {(formData.health_checks || []).map((check, idx) => (
-                                    <div key={idx} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-800/70 bg-slate-950/60 p-3 md:grid-cols-[1.2fr_1fr_1fr_80px]">
+                                    <div key={idx} className="health-check-row grid grid-cols-1 gap-3 rounded-xl border border-slate-800/70 bg-slate-950/60 p-3 md:grid-cols-[1.2fr_1fr_1fr_80px]">
                                         <input
                                             className="input"
                                             placeholder="Metric name"

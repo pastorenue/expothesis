@@ -194,6 +194,12 @@ export interface CreateUserGroupRequest {
     assignment_rule: string;
 }
 
+export interface UpdateUserGroupRequest {
+    name?: string;
+    description?: string;
+    assignment_rule?: string;
+}
+
 export interface MoveUserGroupRequest {
     from_experiment_id: string;
     to_experiment_id: string;
