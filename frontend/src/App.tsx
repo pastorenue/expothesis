@@ -12,6 +12,7 @@ import { SessionReplayPanel } from './components/SessionReplayPanel';
 import { AnalyticsMonitoringDashboard } from './components/AnalyticsMonitoringDashboard';
 import { HomeOverview } from './components/HomeOverview';
 import { AiAssistHub } from './components/AiAssistHub';
+import { TemplatesPlan } from './components/TemplatesPlan';
 import { LoginPage, RegisterPage } from './components/AuthPages';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import { UserSettings } from './components/UserSettings';
@@ -632,6 +633,20 @@ function Layout({ children }: { children: React.ReactNode }) {
                 </svg>
             ),
         },
+        {
+            to: '/templates',
+            label: 'Templates/Plan',
+            icon: (
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M6 3h9l3 3v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"
+                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 9h6M9 13h6M9 17h4" />
+                </svg>
+            ),
+        },
     ];
 
     const pageTitle = location.pathname.startsWith('/experiment/')
@@ -642,10 +657,12 @@ function Layout({ children }: { children: React.ReactNode }) {
             ? 'User Segments'
             : location.pathname.startsWith('/simulation-studio')
                 ? 'Simulation Studio'
-                : location.pathname.startsWith('/feature-flags')
-                    ? 'Feature Flags'
+            : location.pathname.startsWith('/feature-flags')
+                ? 'Feature Flags'
             : location.pathname.startsWith('/sessions')
                 ? 'Sessions'
+            : location.pathname.startsWith('/templates')
+                ? 'Templates/Plan'
             : location.pathname.startsWith('/insights')
                 ? 'Insights'
             : location.pathname.startsWith('/settings')
@@ -870,6 +887,7 @@ function App() {
                         <Route path="/ai-assist" element={<AiAssistHub />} />
                         <Route path="/simulation-studio" element={<SimulationStudio />} />
                         <Route path="/feature-flags" element={<FeatureFlagManager />} />
+                        <Route path="/templates" element={<TemplatesPlan />} />
                         <Route path="/settings" element={<UserSettings />} />
                         <Route
                             path="/sessions"

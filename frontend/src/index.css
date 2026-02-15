@@ -178,6 +178,12 @@
     @apply w-full rounded-xl border border-slate-700/80 bg-slate-950/50 px-4 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all;
   }
 
+  .textarea {
+    @apply w-full rounded-xl border border-slate-700/80 bg-slate-950/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-transparent transition-all;
+    min-height: 120px;
+    resize: vertical;
+  }
+
   .label {
     @apply mb-1 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400;
   }
@@ -1909,6 +1915,31 @@
 .icon-action:hover {
   border-color: rgba(45, 212, 191, 0.5);
   color: #2dd4bf;
+}
+
+.icon-action--close {
+  border-radius: 999px;
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(15, 23, 42, 0.55);
+  color: #fca5a5;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.icon-action--close:hover {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fecaca;
+}
+
+.theme-light .icon-action--close {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(255, 255, 255, 0.95);
+  color: #b91c1c;
+}
+
+.theme-light .icon-action--close:hover {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #991b1b;
 }
 
 .theme-light .icon-action {
