@@ -2,7 +2,7 @@ use actix_web::{web, HttpResponse, Responder};
 use uuid::Uuid;
 
 use crate::models::*;
-use crate::services::ExperimentService;
+use crate::services::{CupedService, ExperimentService};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -13,7 +13,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/{id}/start", web::post().to(start_experiment))
             .route("/{id}/pause", web::post().to(pause_experiment))
             .route("/{id}/stop", web::post().to(stop_experiment))
-            .route("/{id}/analysis", web::get().to(get_analysis)),
+            .route("/{id}/analysis", web::get().to(get_analysis))
+            .route("/{id}/cuped/config", web::get().to(get_cuped_config))
+            .route("/{id}/cuped/config", web::post().to(save_cuped_config)),
     );
 }
 
@@ -87,12 +89,68 @@ async fn stop_experiment(
 }
 
 async fn get_analysis(
-    service: web::Data<ExperimentService>,
+    experiment_service: web::Data<ExperimentService>,
+    cuped_service: web::Data<CupedService>,
+    id: web::Path<Uuid>,
+    query: web::Query<AnalysisQuery>,
+) -> impl Responder {
+    let experiment_id = id.into_inner();
+
+    match experiment_service.analyze_experiment(experiment_id).await {
+        Ok(mut analysis) => {
+            // If CUPED is requested, run the CUPED analysis on top
+            if query.use_cuped.unwrap_or(false) {
+                match cuped_service
+                    .run_cuped_analysis(experiment_id, &analysis.experiment)
+                    .await
+                {
+                    Ok(cuped_results) => {
+                        analysis.cuped_adjusted_results = Some(cuped_results);
+                    }
+                    Err(e) => {
+                        // Return the standard analysis with a CUPED error note
+                        return HttpResponse::Ok().json(serde_json::json!({
+                            "experiment": analysis.experiment,
+                            "results": analysis.results,
+                            "sample_sizes": analysis.sample_sizes,
+                            "health_checks": analysis.health_checks,
+                            "cuped_adjusted_results": null,
+                            "cuped_error": e.to_string()
+                        }));
+                    }
+                }
+            }
+            HttpResponse::Ok().json(analysis)
+        }
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn get_cuped_config(
+    cuped_service: web::Data<CupedService>,
     id: web::Path<Uuid>,
 ) -> impl Responder {
-    match service.analyze_experiment(id.into_inner()).await {
-        Ok(analysis) => HttpResponse::Ok().json(analysis),
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+    match cuped_service.get_config(id.into_inner()).await {
+        Ok(config) => HttpResponse::Ok().json(config),
+        Err(e) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn save_cuped_config(
+    cuped_service: web::Data<CupedService>,
+    id: web::Path<Uuid>,
+    req: web::Json<CupedConfigRequest>,
+) -> impl Responder {
+    match cuped_service
+        .save_config(id.into_inner(), req.into_inner())
+        .await
+    {
+        Ok(config) => HttpResponse::Created().json(config),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
         })),
     }

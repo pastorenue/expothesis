@@ -259,6 +259,7 @@ function HomePage() {
 function ExperimentDetailPage() {
     const { id } = useParams<{ id: string }>();
     const queryClient = useQueryClient();
+    const [useCuped, setUseCuped] = React.useState(false);
 
     const { data: experiment, isLoading: expLoading } = useQuery({
         queryKey: ['experiment', id],
@@ -269,13 +270,13 @@ function ExperimentDetailPage() {
     });
 
     const { data: analysis, isLoading: analysisLoading } = useQuery({
-        queryKey: ['analysis', id],
+        queryKey: ['analysis', id, useCuped],
         queryFn: async () => {
-            const response = await experimentApi.getAnalysis(id!);
+            const response = await experimentApi.getAnalysis(id!, useCuped);
             return response.data;
         },
-        enabled: !!experiment && experiment.status === 'running',
-        refetchInterval: 5000, // Poll every 5 seconds when running
+        enabled: !!experiment,
+        refetchInterval: (experiment?.status === 'running') ? 5000 : false,
     });
 
     const startMutation = useMutation({
@@ -334,7 +335,9 @@ function ExperimentDetailPage() {
             {analysis && (
                 <StatisticalDashboard
                     analysis={analysis}
-                    isPolling={analysisLoading || !!experiment && experiment.status === 'running'}
+                    isPolling={analysisLoading || (!!experiment && experiment.status === 'running')}
+                    useCuped={useCuped}
+                    onToggleCuped={setUseCuped}
                 />
             )}
 
@@ -592,15 +595,15 @@ function Layout({ children }: { children: React.ReactNode }) {
             ? 'User Segments'
             : location.pathname.startsWith('/simulation-studio')
                 ? 'Simulation Studio'
-            : location.pathname.startsWith('/feature-flags')
-                ? 'Feature Flags'
-            : location.pathname.startsWith('/sessions')
-                ? 'Sessions'
-            : location.pathname.startsWith('/analytics')
-                ? 'Analytics & Monitoring'
-            : location.pathname.startsWith('/dashboard')
-                ? 'Experiment Dashboard'
-            : 'Experiment Dashboard';
+                : location.pathname.startsWith('/feature-flags')
+                    ? 'Feature Flags'
+                    : location.pathname.startsWith('/sessions')
+                        ? 'Sessions'
+                        : location.pathname.startsWith('/analytics')
+                            ? 'Analytics & Monitoring'
+                            : location.pathname.startsWith('/dashboard')
+                                ? 'Experiment Dashboard'
+                                : 'Experiment Dashboard';
 
     React.useEffect(() => {
         const saved = window.localStorage.getItem('expothesis-theme');
@@ -702,8 +705,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                                 </svg>
                             </button>
                             <div>
-                            <div className="topbar-meta">Status</div>
-                            <div className="topbar-title">{pageTitle}</div>
+                                <div className="topbar-meta">Status</div>
+                                <div className="topbar-title">{pageTitle}</div>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">

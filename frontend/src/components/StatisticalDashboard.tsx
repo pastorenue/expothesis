@@ -15,17 +15,45 @@ import {
 import type { ExperimentAnalysis } from '../types';
 import { eventApi } from '../services/api';
 import { StatCard, SignificanceIndicator, ProgressBar } from './Common';
+import { CupedConfigurationModal } from './CupedConfigurationModal';
 
 interface StatisticalDashboardProps {
     analysis: ExperimentAnalysis;
     isPolling?: boolean;
+    useCuped?: boolean;
+    onToggleCuped?: (enabled: boolean) => void;
 }
 
 export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
     analysis,
     isPolling,
+    useCuped = false,
+    onToggleCuped,
 }) => {
-    const { experiment, results, sample_sizes } = analysis;
+    const { experiment, results, sample_sizes, cuped_adjusted_results, cuped_error } = analysis;
+    const [showConfigModal, setShowConfigModal] = React.useState(false);
+
+    // Determine which results to display
+    const activeResults = (useCuped && cuped_adjusted_results)
+        ? cuped_adjusted_results
+        : results;
+
+    // Helper to map CupedAdjustedResult to shape compatible with display logic if needed,
+    // or just use directly if properties align.
+    // CupedAdjustedResult has adjusted_mean_a/b instead of mean_a/b.
+    // Let's normalize for display.
+    const displayResults = activeResults.map((r: any) => ({
+        ...r,
+        mean_a: r.adjusted_mean_a ?? r.mean_a,
+        mean_b: r.adjusted_mean_b ?? r.mean_b,
+        std_dev_a: r.adjusted_std_dev ?? r.std_dev_a,
+        std_dev_b: r.adjusted_std_dev ?? r.std_dev_b,
+        effect_size: r.adjusted_effect_size ?? r.effect_size,
+        p_value: r.adjusted_p_value ?? r.p_value,
+        confidence_interval_lower: r.adjusted_ci_lower ?? r.confidence_interval_lower,
+        confidence_interval_upper: r.adjusted_ci_upper ?? r.confidence_interval_upper,
+        variance_reduction: r.variance_reduction_percent,
+    }));
 
     const formatNumber = (value: number | null | undefined, decimals: number = 2, suffix: string = '') => {
         if (value === null || value === undefined || isNaN(value)) return '—';
@@ -38,7 +66,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
     };
 
     // Prepare data for charts
-    const variantComparison = results.map((result) => ({
+    const variantComparison = displayResults.map((result: any) => ({
         name: `${result.variant_b} vs ${result.variant_a}`,
         control: result.mean_a,
         treatment: result.mean_b,
@@ -46,6 +74,36 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
         ciLower: result.confidence_interval_lower,
         ciUpper: result.confidence_interval_upper,
     }));
+
+    // Custom Tooltip Component for Light/Dark Mode Support
+    const CustomTooltip = ({ active, payload, label }: any) => {
+        if (active && payload && payload.length) {
+            return (
+                <div className="bg-slate-950/95 border border-slate-700/50 p-3 rounded-xl shadow-xl backdrop-blur-md theme-light:bg-white/95 theme-light:border-slate-200/80 theme-light:text-slate-800">
+                    <p className="font-medium mb-2 text-slate-200 theme-light:text-slate-900">{label}</p>
+                    <div className="space-y-1">
+                        {payload.map((entry: any, index: number) => (
+                            <div key={index} className="flex items-center gap-2 text-sm">
+                                <div
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: entry.color }}
+                                />
+                                <span className="text-slate-400 theme-light:text-slate-500">
+                                    {entry.name}:
+                                </span>
+                                <span className="font-mono font-medium text-slate-200 theme-light:text-slate-900">
+                                    {typeof entry.value === 'number'
+                                        ? formatNumber(entry.value, 3)
+                                        : entry.value}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+        return null;
+    };
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -64,36 +122,113 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                     )}
                 </div>
                 <p className="text-slate-400">{experiment.description}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-2 items-center">
                     <span className="badge-info">Engine: {experiment.analysis_engine}</span>
                     <span className="badge-gray">Sampling: {experiment.sampling_method}</span>
                     <span className="badge-gray">Type: {experiment.experiment_type}</span>
+
+                    <div className="ml-auto flex items-center gap-3">
+                        {onToggleCuped && (
+                            <label className="flex items-center cursor-pointer gap-2">
+                                <div className="relative">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only"
+                                        checked={useCuped}
+                                        onChange={(e) => onToggleCuped(e.target.checked)}
+                                    />
+                                    <div className={`block w-10 h-6 rounded-full transition-colors ${useCuped ? 'bg-indigo-500' : 'bg-slate-700'}`}></div>
+                                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${useCuped ? 'translate-x-4' : ''}`}></div>
+                                </div>
+                                <span className={`text-sm font-medium ${useCuped ? 'text-indigo-300' : 'text-slate-400'}`}>
+                                    CUPED Variance Reduction
+                                </span>
+                            </label>
+                        )}
+                        <button
+                            onClick={() => setShowConfigModal(true)}
+                            className="btn-secondary text-xs py-1 px-2 h-auto"
+                        >
+                            Configure CUPED
+                        </button>
+                    </div>
                 </div>
+
+                {useCuped && cuped_error && (
+                    <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-200">
+                        ⚠️ CUPED Analysis Failed: {cuped_error}. Showing standard results.
+                    </div>
+                )}
+
+                {useCuped && !cuped_error && cuped_adjusted_results && (
+                    <div className="mt-3 rounded-lg border border-indigo-500/20 bg-indigo-500/10 p-3 flex items-center gap-2">
+                        <span className="text-indigo-300">⚡ CUPED Active</span>
+                        <span className="text-slate-300 text-sm">
+                            Results are adjusted using pre-experiment data to reduce variance and increase sensitivity.
+                        </span>
+                    </div>
+                )}
             </div>
+
+            <CupedConfigurationModal
+                experimentId={experiment.id}
+                isOpen={showConfigModal}
+                onClose={() => setShowConfigModal(false)}
+            />
 
             {/* Key Metrics Grid */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-                {results.map((result, idx) => (
+                {displayResults.map((result: any, idx: number) => (
                     <React.Fragment key={idx}>
                         <StatCard
                             title={`${result.variant_a} (Control)`}
                             value={formatNumber(result.mean_a, 3)}
-                            subtitle={`n = ${result.sample_size_a.toLocaleString()}`}
+                            subtitle={
+                                <span className={result.variance_reduction ? 'text-indigo-300' : ''}>
+                                    {result.variance_reduction ? (
+                                        <>Using Adjusted Mean</>
+                                    ) : (
+                                        `n = ${result.n_matched_users_a ?? result.sample_size_a?.toLocaleString()}`
+                                    )}
+                                </span>
+                            }
                         />
                         <StatCard
                             title={`${result.variant_b} (Treatment)`}
                             value={formatNumber(result.mean_b, 3)}
-                            subtitle={`n = ${result.sample_size_b.toLocaleString()}`}
+                            subtitle={
+                                <span className={result.variance_reduction ? 'text-indigo-300' : ''}>
+                                    {result.variance_reduction ? (
+                                        <>Using Adjusted Mean</>
+                                    ) : (
+                                        `n = ${result.n_matched_users_b ?? result.sample_size_b?.toLocaleString()}`
+                                    )}
+                                </span>
+                            }
                         />
                     </React.Fragment>
                 ))}
             </div>
 
+            {/* CUPED Variance Reduction Stats */}
+            {useCuped && cuped_adjusted_results && (
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4 animate-fade-in">
+                    {displayResults.map((result: any, idx: number) => result.variance_reduction !== undefined && (
+                        <StatCard
+                            key={`vr-${idx}`}
+                            title={`Variance Reduction (${result.variant_b})`}
+                            value={formatPercent(result.variance_reduction / 100, 1)}
+                            subtitle="Less noise = Faster results"
+                        />
+                    ))}
+                </div>
+            )}
+
             {/* Statistical Results */}
             <div className="card">
                 <h3 className="mb-4">Statistical Analysis</h3>
                 <div className="space-y-6">
-                    {results.map((result, idx) => (
+                    {displayResults.map((result: any, idx: number) => (
                         <div key={idx} className="border-b border-slate-800/70 pb-6 last:border-0">
                             <div className="mb-3 flex items-center justify-between">
                                 <h4 className="text-lg font-semibold text-slate-100">
@@ -161,6 +296,94 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                     </BarChart>
                 </ResponsiveContainer>
             </div>
+
+            {/* CUPED Impact Analysis Graphs */}
+            {useCuped && cuped_adjusted_results && (
+                <div className="card animate-fade-in">
+                    <h3 className="mb-4">CUPED Impact Analysis</h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* 1. Metric Means Comparison */}
+                        <div>
+                            <h4 className="text-sm font-medium text-slate-400 mb-4 text-center">Metric Mean (Original vs Adjusted)</h4>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart
+                                    data={(() => {
+                                        // Prepare data by merging original results and CUPED results per variant
+                                        const variantData: Record<string, any> = {};
+
+                                        // 1. Get Original Means
+                                        analysis.results.forEach((r: any) => {
+                                            if (!variantData[r.variant_a]) variantData[r.variant_a] = { name: r.variant_a };
+                                            variantData[r.variant_a].Original = r.mean_a;
+
+                                            if (!variantData[r.variant_b]) variantData[r.variant_b] = { name: r.variant_b };
+                                            variantData[r.variant_b].Original = r.mean_b;
+                                        });
+
+                                        // 2. Get CUPED Means
+                                        cuped_adjusted_results.forEach((r: any) => {
+                                            if (variantData[r.variant_a]) variantData[r.variant_a].CUPED = r.adjusted_mean_a;
+                                            if (variantData[r.variant_b]) variantData[r.variant_b].CUPED = r.adjusted_mean_b;
+
+                                            // Ensure original mean is set if not found in results (unlikely but safe)
+                                            // Note: standard results should cover all variants.
+                                        });
+
+                                        return Object.values(variantData);
+                                    })()}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                                    <XAxis dataKey="name" stroke="#94a3b8" />
+                                    <YAxis stroke="#94a3b8" domain={['auto', 'auto']} />
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                    <Bar dataKey="Original" fill="#64748b" name="Original Mean" />
+                                    <Bar dataKey="CUPED" fill="#818cf8" name="CUPED Mean" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                            <p className="text-xs text-slate-500 mt-2 text-center">
+                                Adjusted means remove pre-experiment bias.
+                            </p>
+                        </div>
+
+                        {/* 2. Variance Reduction */}
+                        <div>
+                            <h4 className="text-sm font-medium text-slate-400 mb-4 text-center">Variance (Lower is Better)</h4>
+                            <ResponsiveContainer width="100%" height={300}>
+                                <BarChart
+                                    data={(() => {
+                                        const variantData: Record<string, any> = {};
+
+                                        // Get Variances from CUPED results (it has both original and adjusted)
+                                        cuped_adjusted_results.forEach((r: any) => {
+                                            if (!variantData[r.variant_a]) variantData[r.variant_a] = { name: r.variant_a };
+                                            variantData[r.variant_a].Original = r.original_variance_a;
+                                            variantData[r.variant_a].CUPED = r.adjusted_variance_a;
+
+                                            if (!variantData[r.variant_b]) variantData[r.variant_b] = { name: r.variant_b };
+                                            variantData[r.variant_b].Original = r.original_variance_b;
+                                            variantData[r.variant_b].CUPED = r.adjusted_variance_b;
+                                        });
+
+                                        return Object.values(variantData);
+                                    })()}
+                                >
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                                    <XAxis dataKey="name" stroke="#94a3b8" />
+                                    <YAxis stroke="#94a3b8" />
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Legend wrapperStyle={{ color: '#e2e8f0' }} />
+                                    <Bar dataKey="Original" fill="#64748b" name="Original Variance" />
+                                    <Bar dataKey="CUPED" fill="#34d399" name="CUPED Variance" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                            <p className="text-xs text-slate-500 mt-2 text-center">
+                                Lower variance = higher sensitivity & faster results.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Effect Size with CI */}
             <div className="card">

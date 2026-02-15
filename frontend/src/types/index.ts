@@ -128,11 +128,49 @@ export interface HealthCheckResult {
     is_passing: boolean;
 }
 
+export interface CupedConfig {
+    experiment_id: string;
+    covariate_metric: string;
+    lookback_days: number;
+    min_sample_size: number;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface CupedConfigRequest {
+    covariate_metric: string;
+    lookback_days?: number;
+    min_sample_size?: number;
+}
+
+export interface CupedAdjustedResult {
+    variant_a: string;
+    variant_b: string;
+    metric_name: string;
+    theta: number;
+    adjusted_mean_a: number;
+    adjusted_mean_b: number;
+    adjusted_effect_size: number;
+    adjusted_p_value: number;
+    adjusted_ci_lower: number;
+    adjusted_ci_upper: number;
+    variance_reduction_percent: number;
+    original_variance_a: number;
+    original_variance_b: number;
+    adjusted_variance_a: number;
+    adjusted_variance_b: number;
+    is_significant: boolean;
+    n_matched_users_a: number;
+    n_matched_users_b: number;
+}
+
 export interface ExperimentAnalysis {
     experiment: Experiment;
     results: StatisticalResult[];
     sample_sizes: VariantSampleSize[];
     health_checks: HealthCheckResult[];
+    cuped_adjusted_results?: CupedAdjustedResult[];
+    cuped_error?: string;
 }
 
 export interface CreateExperimentRequest {

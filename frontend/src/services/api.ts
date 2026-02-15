@@ -25,6 +25,8 @@ import type {
     TrackReplayRequest,
     ListSessionsResponse,
     AnalyticsOverviewResponse,
+    CupedConfig,
+    CupedConfigRequest,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -59,8 +61,16 @@ export const experimentApi = {
     stop: (id: string) =>
         api.post<Experiment>(`/experiments/${id}/stop`),
 
-    getAnalysis: (id: string) =>
-        api.get<ExperimentAnalysis>(`/experiments/${id}/analysis`),
+    getAnalysis: (id: string, useCuped = false) =>
+        api.get<ExperimentAnalysis>(`/experiments/${id}/analysis`, {
+            params: { use_cuped: useCuped },
+        }),
+
+    getCupedConfig: (id: string) =>
+        api.get<CupedConfig>(`/experiments/${id}/cuped/config`),
+
+    saveCupedConfig: (id: string, data: CupedConfigRequest) =>
+        api.post<CupedConfig>(`/experiments/${id}/cuped/config`, data),
 };
 
 // Events
