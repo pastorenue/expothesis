@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { UserGroup } from '../types';
 import { userGroupApi } from '../services/api';
@@ -8,7 +8,13 @@ export const UserGroupManager: React.FC = () => {
     const queryClient = useQueryClient();
     const [selectedGroup, setSelectedGroup] = useState<UserGroup | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState({
+        name: '',
+        description: '',
+        assignment_rule: 'random',
+    });
+    const [editForm, setEditForm] = useState({
         name: '',
         description: '',
         assignment_rule: 'random',
@@ -31,9 +37,62 @@ export const UserGroupManager: React.FC = () => {
         },
     });
 
+    const updateMutation = useMutation({
+        mutationFn: ({ id, data }: { id: string; data: typeof editForm }) =>
+            userGroupApi.update(id, data),
+        onSuccess: (response) => {
+            queryClient.setQueryData(['userGroups'], (oldData: any) => {
+                const existing = Array.isArray(oldData) ? oldData : [];
+                return existing.map((item: UserGroup) => (item.id === response.data.id ? response.data : item));
+            });
+            setSelectedGroup(response.data);
+            setIsEditing(false);
+        },
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => userGroupApi.delete(id),
+        onSuccess: (_, id) => {
+            queryClient.setQueryData(['userGroups'], (oldData: any) => {
+                const existing = Array.isArray(oldData) ? oldData : [];
+                return existing.filter((item: UserGroup) => item.id !== id);
+            });
+            if (selectedGroup?.id === id) {
+                setSelectedGroup(null);
+            }
+            setIsEditing(false);
+        },
+    });
+
     const handleCreate = () => {
         createMutation.mutate(formData);
     };
+
+    const handleUpdate = () => {
+        if (!selectedGroup) return;
+        updateMutation.mutate({
+            id: selectedGroup.id,
+            data: {
+                name: editForm.name,
+                description: editForm.description,
+                assignment_rule: editForm.assignment_rule,
+            },
+        });
+    };
+
+    const handleDelete = (groupId: string) => {
+        if (!window.confirm('Delete this user group? This cannot be undone.')) return;
+        deleteMutation.mutate(groupId);
+    };
+
+    useEffect(() => {
+        if (!selectedGroup) return;
+        setEditForm({
+            name: selectedGroup.name,
+            description: selectedGroup.description,
+            assignment_rule: selectedGroup.assignment_rule,
+        });
+    }, [selectedGroup]);
 
     if (isLoading) {
         return (
@@ -152,31 +211,112 @@ export const UserGroupManager: React.FC = () => {
 
             {selectedGroup && (
                 <div className="card animate-fade-in">
-                    <h3 className="mb-3">Selected Group: {selectedGroup.name}</h3>
-                    <p className="mb-4 text-slate-300">{selectedGroup.description}</p>
-                    <div className="grid grid-cols-3 gap-4">
-                        <div>
-                            <p className="text-sm text-slate-400">Total Users</p>
-                            <p className="text-2xl font-bold text-slate-100">
-                                {selectedGroup.size.toLocaleString()}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-slate-400">Created</p>
-                            <p className="font-medium text-slate-100">
-                                {new Date(selectedGroup.created_at).toLocaleDateString()}
-                            </p>
-                        </div>
-                        <div>
-                            <p className="text-sm text-slate-400">Assignment Rule</p>
-                            <p className="font-medium text-slate-100">{selectedGroup.assignment_rule}</p>
+                    <div className="flex items-center justify-between">
+                        <h3>Selected Group: {selectedGroup.name}</h3>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setIsEditing((prev) => !prev)}
+                                className="btn-secondary"
+                            >
+                                {isEditing ? 'Close' : 'Edit'}
+                            </button>
+                            <button
+                                onClick={() => handleDelete(selectedGroup.id)}
+                                className="btn-danger"
+                            >
+                                Delete
+                            </button>
                         </div>
                     </div>
-                    <div className="mt-4">
-                        <p className="mb-2 text-sm font-medium text-slate-400">
-                            💡 Drag this group to move it between experiments (feature coming soon)
-                        </p>
-                    </div>
+
+                    {isEditing ? (
+                        <div className="mt-4 space-y-3">
+                            <div>
+                                <label className="label">Group Name</label>
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={editForm.name}
+                                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Description</label>
+                                <textarea
+                                    className="input"
+                                    rows={2}
+                                    value={editForm.description}
+                                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="label">Assignment Mode</label>
+                                <select
+                                    className="input"
+                                    value={editForm.assignment_rule.startsWith('{') ? 'custom' : editForm.assignment_rule}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val === 'custom') {
+                                            setEditForm({ ...editForm, assignment_rule: '{\n  "version": "1",\n  "conditions": []\n}' });
+                                        } else {
+                                            setEditForm({ ...editForm, assignment_rule: val });
+                                        }
+                                    }}
+                                >
+                                    <option value="random">Random Assignment</option>
+                                    <option value="hash">Hash-Based (Consistent)</option>
+                                    <option value="manual">Manual Assignment</option>
+                                    <option value="custom">Custom Rule (JSON)</option>
+                                </select>
+                            </div>
+                            {(editForm.assignment_rule.startsWith('{') || editForm.assignment_rule === 'custom') && (
+                                <div>
+                                    <label className="label">Rule Definition (JSON)</label>
+                                    <textarea
+                                        className="input font-mono text-sm"
+                                        rows={6}
+                                        value={editForm.assignment_rule}
+                                        onChange={(e) => setEditForm({ ...editForm, assignment_rule: e.target.value })}
+                                    />
+                                </div>
+                            )}
+                            <div className="flex gap-2">
+                                <button onClick={handleUpdate} className="btn-success">
+                                    Save Changes
+                                </button>
+                                <button onClick={() => setIsEditing(false)} className="btn-secondary">
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <p className="mb-4 text-slate-300">{selectedGroup.description}</p>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <p className="text-sm text-slate-400">Total Users</p>
+                                    <p className="text-2xl font-bold text-slate-100">
+                                        {selectedGroup.size.toLocaleString()}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Created</p>
+                                    <p className="font-medium text-slate-100">
+                                        {new Date(selectedGroup.created_at).toLocaleDateString()}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-sm text-slate-400">Assignment Rule</p>
+                                    <p className="font-medium text-slate-100">{selectedGroup.assignment_rule}</p>
+                                </div>
+                            </div>
+                            <div className="mt-4">
+                                <p className="mb-2 text-sm font-medium text-slate-400">
+                                    💡 Drag this group to move it between experiments (feature coming soon)
+                                </p>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 

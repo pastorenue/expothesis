@@ -10,6 +10,7 @@ import { SimulationStudio } from './components/SimulationStudio';
 import { FeatureFlagManager } from './components/FeatureFlagManager';
 import { SessionReplayPanel } from './components/SessionReplayPanel';
 import { AnalyticsMonitoringDashboard } from './components/AnalyticsMonitoringDashboard';
+import { HomeOverview } from './components/HomeOverview';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import type { CreateExperimentRequest } from './types';
 import { ExpothesisTracker } from './sdk/expothesis';
@@ -534,6 +535,15 @@ function Layout({ children }: { children: React.ReactNode }) {
     const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
     const navItems = [
         {
+            to: '/home',
+            label: 'Home',
+            icon: (
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 10.5l8-6 8 6V20a1 1 0 0 1-1 1h-4.5a.5.5 0 0 1-.5-.5V15a1 1 0 0 0-1-1h-3a1 1 0 0 0-1 1v5.5a.5.5 0 0 1-.5.5H5a1 1 0 0 1-1-1v-9.5Z" />
+                </svg>
+            ),
+        },
+        {
             to: '/dashboard',
             label: 'Experiments',
             icon: (
@@ -591,6 +601,8 @@ function Layout({ children }: { children: React.ReactNode }) {
 
     const pageTitle = location.pathname.startsWith('/experiment/')
         ? 'Experiment Control'
+        : location.pathname.startsWith('/home')
+            ? 'Home'
         : location.pathname.startsWith('/user-groups')
             ? 'User Segments'
             : location.pathname.startsWith('/simulation-studio')
@@ -632,10 +644,25 @@ function Layout({ children }: { children: React.ReactNode }) {
                     />
                 )}
                 <aside
-                    className={`sidebar fixed left-0 top-0 z-40 h-full transform transition-transform duration-300 md:static md:h-auto md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                    className={`sidebar relative fixed left-0 top-0 z-40 h-full transform transition-transform duration-300 md:static md:h-auto md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
                         } ${isRailCollapsed ? 'sidebar-collapsed' : 'w-[260px]'}`}
                 >
-                    <Link to="/dashboard" className="sidebar-brand">
+                    <button
+                        className="sidebar-float-toggle"
+                        onClick={() => setIsRailCollapsed((prev) => !prev)}
+                        aria-label={isRailCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            className={`h-4 w-4 transition-transform duration-300 ${isRailCollapsed ? 'rotate-180' : ''}`}
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.8"
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15 5l-6 7 6 7" />
+                        </svg>
+                    </button>
+                    <Link to="/home" className="sidebar-brand">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-slate-900 font-bold">
                             Ex
                         </div>
@@ -650,8 +677,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                     <nav className="space-y-2">
                         {navItems.map((item) => {
                             const isActive =
-                                item.to === '/dashboard'
-                                    ? location.pathname === '/dashboard'
+                                item.to === '/dashboard' || item.to === '/home'
+                                    ? location.pathname === item.to
                                     : location.pathname.startsWith(item.to);
                             return (
                                 <Link
@@ -659,9 +686,13 @@ function Layout({ children }: { children: React.ReactNode }) {
                                     to={item.to}
                                     className={`sidebar-link group relative ${isActive ? 'sidebar-link-active' : ''}`}
                                     onClick={() => setIsSidebarOpen(false)}
+                                    aria-label={item.label}
                                 >
                                     <span className="text-cyan-200/80">{item.icon}</span>
                                     <span className={isRailCollapsed ? 'md:sr-only' : ''}>
+                                        {item.label}
+                                    </span>
+                                    <span className="rail-tooltip" role="tooltip">
                                         {item.label}
                                     </span>
                                 </Link>
@@ -670,19 +701,6 @@ function Layout({ children }: { children: React.ReactNode }) {
                     </nav>
 
                     <div className="mt-auto space-y-4">
-                        <button
-                            className="btn-secondary hidden w-full items-center justify-center md:flex"
-                            onClick={() => setIsRailCollapsed((prev) => !prev)}
-                            aria-label={isRailCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                        >
-                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d={isRailCollapsed ? 'M9 5l6 7-6 7' : 'M15 5l-6 7 6 7'}
-                                />
-                            </svg>
-                        </button>
                         <div className="panel">
                             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">System</p>
                             <p className="mt-2 text-sm text-slate-300">Realtime analytics</p>
@@ -761,6 +779,7 @@ function App() {
                 <Layout>
                     <Routes>
                         <Route path="/" element={<LandingPage />} />
+                        <Route path="/home" element={<HomeOverview />} />
                         <Route path="/dashboard" element={<HomePage />} />
                         <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
                         <Route path="/user-groups" element={<UserGroupManager />} />

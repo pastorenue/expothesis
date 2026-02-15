@@ -10,6 +10,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("", web::post().to(create_user_group))
             .route("", web::get().to(list_user_groups))
             .route("/{id}", web::get().to(get_user_group))
+            .route("/{id}", web::put().to(update_user_group))
+            .route("/{id}", web::delete().to(delete_user_group))
             .route("/{id}/move", web::post().to(move_user_group))
             .route("/{id}/metrics", web::get().to(get_group_metrics))
             .route("/assign", web::post().to(assign_user)),
@@ -44,6 +46,36 @@ async fn get_user_group(
     match service.get_user_group(id.into_inner()).await {
         Ok(group) => HttpResponse::Ok().json(group),
         Err(e) => HttpResponse::NotFound().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn update_user_group(
+    service: web::Data<UserGroupService>,
+    id: web::Path<Uuid>,
+    req: web::Json<UpdateUserGroupRequest>,
+) -> impl Responder {
+    match service
+        .update_user_group(id.into_inner(), req.into_inner())
+        .await
+    {
+        Ok(group) => HttpResponse::Ok().json(group),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn delete_user_group(
+    service: web::Data<UserGroupService>,
+    id: web::Path<Uuid>,
+) -> impl Responder {
+    match service.delete_user_group(id.into_inner()).await {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
+            "message": "User group deleted"
+        })),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
         })),
     }

@@ -27,6 +27,7 @@ import type {
     AnalyticsOverviewResponse,
     CupedConfig,
     CupedConfigRequest,
+    UpdateUserGroupRequest,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
