@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useSearchParams, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useSearchParams, useNavigate, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { experimentApi } from './services/api';
 import { ExperimentCreator } from './components/ExperimentCreator';
@@ -11,7 +11,10 @@ import { FeatureFlagManager } from './components/FeatureFlagManager';
 import { SessionReplayPanel } from './components/SessionReplayPanel';
 import { AnalyticsMonitoringDashboard } from './components/AnalyticsMonitoringDashboard';
 import { HomeOverview } from './components/HomeOverview';
+import { AiAssistHub } from './components/AiAssistHub';
+import { LoginPage, RegisterPage } from './components/AuthPages';
 import { LoadingSpinner, StatusBadge } from './components/Common';
+import { UserSettings } from './components/UserSettings';
 import type { CreateExperimentRequest } from './types';
 import { ExpothesisTracker } from './sdk/expothesis';
 
@@ -394,9 +397,20 @@ function LandingPage() {
                     <a href="#platform" className="landing-link">
                         Platform
                     </a>
-                    <Link to="/dashboard" className="btn-primary landing-cta">
-                        Go to Dashboard
-                    </Link>
+                    {window.localStorage.getItem('expothesis-token') ? (
+                        <Link to="/home" className="btn-primary landing-cta">
+                            Open Dashboard
+                        </Link>
+                    ) : (
+                        <>
+                            <Link to="/login" className="landing-link">
+                                Log in
+                            </Link>
+                            <Link to="/register" className="btn-primary landing-cta">
+                                Sign up
+                            </Link>
+                        </>
+                    )}
                 </div>
             </header>
 
@@ -411,9 +425,15 @@ function LandingPage() {
                         real-time analytics that feel like an operations command center.
                     </p>
                     <div className="landing-hero-actions">
-                        <Link to="/dashboard" className="btn-primary">
-                            Open Dashboard
-                        </Link>
+                        {window.localStorage.getItem('expothesis-token') ? (
+                            <Link to="/home" className="btn-primary">
+                                Open Dashboard
+                            </Link>
+                        ) : (
+                            <Link to="/register" className="btn-primary">
+                                Get started
+                            </Link>
+                        )}
                         <a href="#platform" className="btn-secondary">
                             Explore Platform
                         </a>
@@ -530,6 +550,7 @@ function LandingPage() {
 
 function Layout({ children }: { children: React.ReactNode }) {
     const location = useLocation();
+    const navigate = useNavigate();
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const [isRailCollapsed, setIsRailCollapsed] = React.useState(false);
     const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
@@ -553,11 +574,20 @@ function Layout({ children }: { children: React.ReactNode }) {
             ),
         },
         {
-            to: '/analytics',
-            label: 'Analytics & Monitoring',
+            to: '/insights',
+            label: 'Insights',
             icon: (
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 19V5m5 14V9m5 10V7m5 12V11" />
+                </svg>
+            ),
+        },
+        {
+            to: '/ai-assist',
+            label: 'AI Assist',
+            icon: (
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v3m0 12v3m9-9h-3M6 12H3m12.36 6.36-2.12-2.12M8.76 8.76 6.64 6.64m8.72 0-2.12 2.12M8.76 15.24 6.64 17.36" />
                 </svg>
             ),
         },
@@ -609,13 +639,17 @@ function Layout({ children }: { children: React.ReactNode }) {
                 ? 'Simulation Studio'
                 : location.pathname.startsWith('/feature-flags')
                     ? 'Feature Flags'
-                    : location.pathname.startsWith('/sessions')
-                        ? 'Sessions'
-                        : location.pathname.startsWith('/analytics')
-                            ? 'Analytics & Monitoring'
-                            : location.pathname.startsWith('/dashboard')
-                                ? 'Experiment Dashboard'
-                                : 'Experiment Dashboard';
+            : location.pathname.startsWith('/sessions')
+                ? 'Sessions'
+            : location.pathname.startsWith('/insights')
+                ? 'Insights'
+            : location.pathname.startsWith('/settings')
+                ? 'User Settings'
+            : location.pathname.startsWith('/ai-assist')
+                ? 'AI Assist'
+            : location.pathname.startsWith('/dashboard')
+                ? 'Experiment Dashboard'
+            : 'Experiment Dashboard';
 
     React.useEffect(() => {
         const saved = window.localStorage.getItem('expothesis-theme');
@@ -629,8 +663,15 @@ function Layout({ children }: { children: React.ReactNode }) {
         window.localStorage.setItem('expothesis-theme', theme);
     }, [theme]);
 
-    if (location.pathname === '/') {
+    const authToken = window.localStorage.getItem('expothesis-token');
+    const isPublicRoute = ['/', '/login', '/register'].includes(location.pathname);
+
+    if (isPublicRoute) {
         return <>{children}</>;
+    }
+
+    if (!authToken && !isPublicRoute) {
+        return <Navigate to="/login" replace />;
     }
 
     return (
@@ -644,7 +685,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                     />
                 )}
                 <aside
-                    className={`sidebar relative fixed left-0 top-0 z-40 h-full transform transition-transform duration-300 md:static md:h-auto md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                    className={`sidebar relative fixed left-0 top-0 z-40 h-full transform transition-transform duration-300 md:sticky md:top-0 md:h-screen md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
                         } ${isRailCollapsed ? 'sidebar-collapsed' : 'w-[260px]'}`}
                 >
                     <button
@@ -705,6 +746,41 @@ function Layout({ children }: { children: React.ReactNode }) {
                             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">System</p>
                             <p className="mt-2 text-sm text-slate-300">Realtime analytics</p>
                             <p className="text-xs text-slate-500">Streaming updates every 5s</p>
+                        </div>
+                        <div className="sidebar-actions">
+                            <Link to="/settings" className="sidebar-link group relative">
+                                <span className="text-cyan-200/80">
+                                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            d="M12 6.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Zm8 5.5-1.7.3a6.7 6.7 0 0 1-.7 1.7l1 1.4-1.6 1.6-1.4-1a6.7 6.7 0 0 1-1.7.7L12 20l-2.3-1.7a6.7 6.7 0 0 1-1.7-.7l-1.4 1-1.6-1.6 1-1.4a6.7 6.7 0 0 1-.7-1.7L4 12l1.7-2.3a6.7 6.7 0 0 1 .7-1.7l-1-1.4L7 4.9l1.4 1a6.7 6.7 0 0 1 1.7-.7L12 4l2.3 1.7a6.7 6.7 0 0 1 1.7.7l1.4-1L19 7l-1 1.4a6.7 6.7 0 0 1 .7 1.7L20 12Z"
+                                        />
+                                    </svg>
+                                </span>
+                                <span className={isRailCollapsed ? 'md:sr-only' : ''}>User Settings</span>
+                                <span className="rail-tooltip" role="tooltip">User Settings</span>
+                            </Link>
+                            <button
+                                type="button"
+                                className="sidebar-link group relative"
+                                onClick={() => {
+                                    window.localStorage.removeItem('expothesis-token');
+                                    setIsSidebarOpen(false);
+                                    navigate('/login');
+                                }}
+                                aria-label="Log out"
+                            >
+                                <span className="text-rose-300/80">
+                                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 17l5-5-5-5" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12H3" />
+                                    </svg>
+                                </span>
+                                <span className={isRailCollapsed ? 'md:sr-only' : ''}>Log out</span>
+                                <span className="rail-tooltip" role="tooltip">Log out</span>
+                            </button>
                         </div>
 
                     </div>
@@ -779,13 +855,17 @@ function App() {
                 <Layout>
                     <Routes>
                         <Route path="/" element={<LandingPage />} />
+                        <Route path="/login" element={<LoginPage />} />
+                        <Route path="/register" element={<RegisterPage />} />
                         <Route path="/home" element={<HomeOverview />} />
                         <Route path="/dashboard" element={<HomePage />} />
                         <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
                         <Route path="/user-groups" element={<UserGroupManager />} />
-                        <Route path="/analytics" element={<AnalyticsMonitoringDashboard />} />
+                        <Route path="/insights" element={<AnalyticsMonitoringDashboard />} />
+                        <Route path="/ai-assist" element={<AiAssistHub />} />
                         <Route path="/simulation-studio" element={<SimulationStudio />} />
                         <Route path="/feature-flags" element={<FeatureFlagManager />} />
+                        <Route path="/settings" element={<UserSettings />} />
                         <Route
                             path="/sessions"
                             element={

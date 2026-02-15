@@ -38,6 +38,15 @@ log = "0.4"
 anyhow = "1.0"
 thiserror = "1.0"
 regex = "1.12.3"
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+futures-util = "0.3"
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+argon2 = "0.5"
+jsonwebtoken = "9.3"
+rand = "0.8"
+data-encoding = "2.6"
+totp-rs = "5"
+lettre = { version = "0.11", features = ["smtp-transport", "builder", "tokio1", "tokio1-native-tls"] }
 
 [dev-dependencies]
 mockito = "1.2"

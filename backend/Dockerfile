@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.84-slim-bookworm as builder
+FROM rust:1.88-slim-bookworm as builder
 
 WORKDIR /usr/src/app
 
@@ -15,6 +15,7 @@ RUN cargo build --release
 
 # Copy the source code
 COPY src ./src
+COPY migrations ./migrations
 # Touch the main file to force rebuild
 RUN touch src/main.rs
 RUN cargo build --release

@@ -2,7 +2,7 @@ use crate::config::Config;
 use crate::models::{
     EndSessionRequest, ListSessionsResponse, StartSessionRequest, TrackEventRequest, TrackReplayRequest,
 };
-use crate::services::TrackingService;
+use crate::services::{SdkTokenService, TrackingService};
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use log::error;
 
@@ -23,10 +23,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 async fn start_session(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     payload: web::Json<StartSessionRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     match tracking_service.start_session(payload.into_inner()).await {
@@ -43,10 +44,11 @@ async fn start_session(
 async fn end_session(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     payload: web::Json<EndSessionRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     match tracking_service.end_session(payload.into_inner()).await {
@@ -63,10 +65,11 @@ async fn end_session(
 async fn track_event(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     payload: web::Json<TrackEventRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     match tracking_service.track_event(payload.into_inner()).await {
@@ -83,10 +86,11 @@ async fn track_event(
 async fn track_replay(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     payload: web::Json<TrackReplayRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     match tracking_service.track_replay(payload.into_inner()).await {
@@ -103,11 +107,12 @@ async fn track_replay(
 async fn get_replay(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     path: web::Path<String>,
     query: web::Query<ReplayQuery>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     let limit = query.limit.unwrap_or(1200);
@@ -141,10 +146,11 @@ struct ReplayQuery {
 async fn list_sessions(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     query: web::Query<SessionQuery>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     let limit = query.limit.unwrap_or(20);
@@ -175,10 +181,11 @@ struct EventsQuery {
 async fn list_events(
     tracking_service: web::Data<TrackingService>,
     config: web::Data<Config>,
+    pool: web::Data<sqlx::PgPool>,
     http_req: HttpRequest,
     query: web::Query<EventsQuery>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config) {
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
         return response;
     }
     let limit = query.limit.unwrap_or(200);
@@ -196,10 +203,21 @@ async fn list_events(
     }
 }
 
-fn verify_tracking_key(req: &HttpRequest, config: &Config) -> Result<(), HttpResponse> {
-    let expected = match config.tracking_api_key.as_deref() {
-        Some(key) => key,
-        None => return Ok(()),
+async fn verify_tracking_key(
+    req: &HttpRequest,
+    config: &Config,
+    pool: &sqlx::PgPool,
+) -> Result<(), HttpResponse> {
+    let service = SdkTokenService::new(pool.clone());
+    let expected = match service
+        .ensure_tokens(
+            config.tracking_api_key.clone(),
+            config.feature_flags_api_key.clone(),
+        )
+        .await
+    {
+        Ok(tokens) => tokens.tracking_api_key,
+        Err(_) => return Ok(()),
     };
 
     let header_key = req

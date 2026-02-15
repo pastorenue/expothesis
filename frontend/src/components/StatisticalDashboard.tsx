@@ -65,6 +65,46 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
         return `${(value * 100).toFixed(decimals)}%`;
     };
 
+    const insights = React.useMemo(() => {
+        if (!displayResults.length) return null;
+
+        const withSignificance = displayResults.map((result: any) => {
+            const significant = result.bayes_probability !== undefined
+                ? result.bayes_probability >= 0.95
+                : result.p_value < 0.05;
+            return { ...result, significant };
+        });
+
+        const best = [...withSignificance].sort((a, b) => b.effect_size - a.effect_size)[0];
+        const sampleProgress = sample_sizes.length
+            ? sample_sizes.reduce((sum, size) => sum + Math.min(1, size.current_size / size.required_size), 0) /
+              sample_sizes.length
+            : 0;
+
+        const lift = best ? formatPercent(best.effect_size) : '—';
+        const headline = best?.significant
+            ? `${best.variant_b} is leading with ${lift} lift`
+            : `No statistically significant winner yet`;
+
+        const bullets: string[] = [];
+        if (best) {
+            bullets.push(
+                best.significant
+                    ? `Signal is significant (${best.bayes_probability !== undefined ? `posterior ${formatNumber(best.bayes_probability, 3)}` : `p=${formatNumber(best.p_value, 4)}`}).`
+                    : `Signal is trending (${best.bayes_probability !== undefined ? `posterior ${formatNumber(best.bayes_probability, 3)}` : `p=${formatNumber(best.p_value, 4)}`}).`,
+            );
+        }
+        if (sampleProgress < 0.5) {
+            bullets.push(`Sample progress is ${(sampleProgress * 100).toFixed(0)}% — keep running to increase power.`);
+        } else if (sampleProgress < 1) {
+            bullets.push(`Sample progress is ${(sampleProgress * 100).toFixed(0)}% — nearing target sample size.`);
+        } else {
+            bullets.push(`Sample target reached — safe to make a decision if guardrails are stable.`);
+        }
+
+        return { headline, bullets };
+    }, [displayResults, sample_sizes]);
+
     // Prepare data for charts
     const variantComparison = displayResults.map((result: any) => ({
         name: `${result.variant_b} vs ${result.variant_a}`,
@@ -175,6 +215,21 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
                 isOpen={showConfigModal}
                 onClose={() => setShowConfigModal(false)}
             />
+
+            {insights && (
+                <div className="card">
+                    <div className="flex items-center justify-between">
+                        <h3>AI Insights</h3>
+                        <span className="badge-gray">Auto-summary</span>
+                    </div>
+                    <div className="mt-3 text-lg font-semibold text-slate-100">{insights.headline}</div>
+                    <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                        {insights.bullets.map((bullet, idx) => (
+                            <li key={idx}>• {bullet}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {/* Key Metrics Grid */}
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">

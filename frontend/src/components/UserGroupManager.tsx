@@ -9,6 +9,8 @@ export const UserGroupManager: React.FC = () => {
     const [selectedGroup, setSelectedGroup] = useState<UserGroup | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [rulePrompt, setRulePrompt] = useState('');
+    const [editRulePrompt, setEditRulePrompt] = useState('');
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -71,6 +73,43 @@ export const UserGroupManager: React.FC = () => {
 
     const handleCreate = () => {
         createMutation.mutate(formData);
+    };
+
+    const buildRuleFromText = (text: string) => {
+        const normalized = text.trim().toLowerCase();
+        const conditions: any[] = [];
+
+        const countryMatch = normalized.match(/country\s*(is|=)\s*([a-z]+)/i);
+        if (countryMatch) {
+            conditions.push({ attribute: 'country', op: 'eq', value: countryMatch[2].toUpperCase() });
+        }
+
+        const emailMatch = normalized.match(/email\s*(ends with|domain)\s*(@?[a-z0-9.-]+)/i);
+        if (emailMatch) {
+            const domain = emailMatch[2].startsWith('@') ? emailMatch[2] : `@${emailMatch[2]}`;
+            conditions.push({ attribute: 'email', op: 'regex', value: `.*\\${domain}$` });
+        }
+
+        const planMatch = normalized.match(/plan\s*(is|=)\s*([a-z0-9_-]+)/i);
+        if (planMatch) {
+            conditions.push({ attribute: 'plan', op: 'eq', value: planMatch[2] });
+        }
+
+        const regionMatch = normalized.match(/region\s*(is|=)\s*([a-z0-9_-]+)/i);
+        if (regionMatch) {
+            conditions.push({ attribute: 'region', op: 'eq', value: regionMatch[2] });
+        }
+
+        const ageMatch = normalized.match(/age\s*(>=|<=|>|<)\s*(\d+)/i);
+        if (ageMatch) {
+            conditions.push({ attribute: 'age', op: ageMatch[1], value: Number(ageMatch[2]) });
+        }
+
+        if (conditions.length === 0) {
+            conditions.push({ attribute: 'attribute', op: 'eq', value: 'value' });
+        }
+
+        return JSON.stringify({ version: '1', conditions }, null, 2);
     };
 
     const handleUpdate = () => {
@@ -162,6 +201,31 @@ export const UserGroupManager: React.FC = () => {
                                 <option value="manual">Manual Assignment</option>
                                 <option value="custom">Custom Rule (JSON)</option>
                             </select>
+                        </div>
+                        <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 p-3">
+                            <div className="flex items-center justify-between">
+                                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI Rule Copilot</p>
+                                <span className="badge-gray">Draft JSON</span>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-300">
+                                Describe your targeting rule in plain language.
+                            </p>
+                            <div className="mt-3 flex flex-col gap-2">
+                                <input
+                                    type="text"
+                                    className="input"
+                                    value={rulePrompt}
+                                    onChange={(e) => setRulePrompt(e.target.value)}
+                                    placeholder="e.g., Country is US and plan is enterprise"
+                                />
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => setFormData({ ...formData, assignment_rule: buildRuleFromText(rulePrompt) })}
+                                >
+                                    Generate JSON Rule
+                                </button>
+                            </div>
                         </div>
                         {(formData.assignment_rule.startsWith('{') || formData.assignment_rule === 'custom') && (
                             <div>
@@ -273,6 +337,31 @@ export const UserGroupManager: React.FC = () => {
                                     <option value="manual">Manual Assignment</option>
                                     <option value="custom">Custom Rule (JSON)</option>
                                 </select>
+                            </div>
+                            <div className="rounded-xl border border-slate-800/70 bg-slate-950/50 p-3">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs uppercase tracking-[0.2em] text-slate-400">AI Rule Copilot</p>
+                                    <span className="badge-gray">Draft JSON</span>
+                                </div>
+                                <p className="mt-2 text-sm text-slate-300">
+                                    Describe your targeting rule in plain language.
+                                </p>
+                                <div className="mt-3 flex flex-col gap-2">
+                                    <input
+                                        type="text"
+                                        className="input"
+                                        value={editRulePrompt}
+                                        onChange={(e) => setEditRulePrompt(e.target.value)}
+                                        placeholder="e.g., Email ends with @example.com"
+                                    />
+                                    <button
+                                        type="button"
+                                        className="btn-secondary"
+                                        onClick={() => setEditForm({ ...editForm, assignment_rule: buildRuleFromText(editRulePrompt) })}
+                                    >
+                                        Generate JSON Rule
+                                    </button>
+                                </div>
                             </div>
                             {(editForm.assignment_rule.startsWith('{') || editForm.assignment_rule === 'custom') && (
                                 <div>

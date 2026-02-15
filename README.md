@@ -39,6 +39,7 @@ Expothesis is a high-performance, real-time experimentation platform designed fo
     -   Frontend: [http://localhost:3000](http://localhost:3000)
     -   Backend API: [http://localhost:8080](http://localhost:8080)
     -   ClickHouse: [http://localhost:8123](http://localhost:8123)
+    -   Postgres: [http://localhost:5432](http://localhost:5432)
 
 ## 📊 Live Testing & Simulation
 
@@ -80,6 +81,14 @@ We provide a specialized data generator to simulate real-world traffic and verif
 ```bash
 cd backend
 cargo run
+```
+
+### Auth + 2FA (TOTP)
+Set environment variables for JWT + optional LiteLLM:
+```bash
+export JWT_SECRET=change-me
+export JWT_TTL_MINUTES=60
+export ALLOW_DEV_OTP=1
 ```
 
 ### Frontend (React)

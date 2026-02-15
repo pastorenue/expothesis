@@ -8,8 +8,9 @@ import {
     FeatureFlagStatus,
     FeatureGateStatus,
     UserGroup,
+    Experiment,
 } from '../types';
-import { featureFlagApi, featureGateApi, userGroupApi } from '../services/api';
+import { featureFlagApi, featureGateApi, userGroupApi, experimentApi } from '../services/api';
 
 const emptyFlag: CreateFeatureFlagRequest = {
     name: '',
@@ -75,6 +76,11 @@ export const FeatureFlagManager: React.FC = () => {
         queryFn: async () => (await userGroupApi.list()).data,
     });
 
+    const { data: experiments = [] } = useQuery({
+        queryKey: ['experiments'],
+        queryFn: async () => (await experimentApi.list()).data,
+    });
+
     const createFlag = useMutation({
         mutationFn: (data: CreateFeatureFlagRequest) => featureFlagApi.create(data),
         onSuccess: (response) => {
@@ -129,6 +135,35 @@ export const FeatureFlagManager: React.FC = () => {
         if (!selectedFlag) return [] as FeatureGate[];
         return gates.filter((gate) => gate.flag_id === selectedFlag.id);
     }, [gates, selectedFlag]);
+
+    const rolloutAdvice = useMemo(() => {
+        if (!selectedFlag) return null;
+        const linkedExperiments = experiments.filter(
+            (experiment: Experiment) => experiment.feature_flag_id === selectedFlag.id,
+        ).length;
+        const activeGates = selectedGates.filter((gate) => gate.status === FeatureGateStatus.Active).length;
+
+        const steps: string[] = [];
+        if (selectedFlag.status === FeatureFlagStatus.Inactive) {
+            steps.push('Start with a 5% rollout to a controlled segment.');
+            steps.push('Add guardrails for error rate and latency before scaling.');
+        } else {
+            steps.push('Ramp gradually (10% → 25% → 50% → 100%) while monitoring SRM and guardrails.');
+        }
+        if (activeGates === 0) {
+            steps.push('Create at least one active gate to control exposure.');
+        }
+        if (linkedExperiments === 0) {
+            steps.push('Run an experiment linked to this flag to quantify lift and risk.');
+        }
+
+        return {
+            headline: selectedFlag.status === FeatureFlagStatus.Active ? 'Flag is active' : 'Flag is inactive',
+            steps,
+            linkedExperiments,
+            activeGates,
+        };
+    }, [experiments, selectedFlag, selectedGates]);
 
     const tagOptions = useMemo(() => {
         const tagSet = new Set<string>();
@@ -798,6 +833,23 @@ export const FeatureFlagManager: React.FC = () => {
                             <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">{selectedFlag.name}</p>
                         )}
                     </div>
+
+                    {selectedFlag && rolloutAdvice && (
+                        <div className="card">
+                            <div className="flex items-center justify-between">
+                                <h3>AI Rollout Advisor</h3>
+                                <span className="badge-gray">
+                                    {rolloutAdvice.activeGates} gates · {rolloutAdvice.linkedExperiments} experiments
+                                </span>
+                            </div>
+                            <p className="mt-2 text-sm text-slate-300">{rolloutAdvice.headline}</p>
+                            <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                                {rolloutAdvice.steps.map((step, idx) => (
+                                    <li key={idx}>• {step}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
 
                     {showGateForm && selectedFlag && (
                         <div className="card animate-slide-up bg-slate-950/60">

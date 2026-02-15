@@ -1,0 +1,51 @@
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Deserialize)]
+pub struct RegisterRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyOtpRequest {
+    pub email: String,
+    pub code: String,
+    pub totp_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EnableTotpRequest {
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyTotpRequest {
+    pub user_id: Uuid,
+    pub code: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthStatusResponse {
+    pub requires_otp: bool,
+    pub totp_enabled: bool,
+    pub dev_code: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AuthTokenResponse {
+    pub token: String,
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TotpSetupResponse {
+    pub secret: String,
+    pub otpauth_url: String,
+}
