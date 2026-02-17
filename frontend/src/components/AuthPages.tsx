@@ -2,9 +2,24 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../services/api';
 
+const normalizeAuthError = (message: string) => {
+    const normalized = message.trim();
+    if (normalized.toLowerCase().includes('totp')) {
+        return 'Invalid code. Please check your authenticator app and try again.';
+    }
+    if (normalized.toLowerCase().includes('otp')) {
+        return 'Invalid code. Please try again.';
+    }
+    if (normalized.toLowerCase().includes('password')) {
+        return 'Email or password is incorrect.';
+    }
+    return normalized;
+};
+
 const getAuthError = (error: unknown, fallback: string) => {
     const err = error as { response?: { data?: { error?: string } } };
-    return err.response?.data?.error ?? fallback;
+    const raw = err.response?.data?.error ?? fallback;
+    return normalizeAuthError(raw);
 };
 
 export const LoginPage: React.FC = () => {
@@ -21,6 +36,12 @@ export const LoginPage: React.FC = () => {
         try {
             const res = await authApi.login({ email, password });
             setTotpEnabled(res.data.totp_enabled);
+            if (res.data.token && res.data.user_id) {
+                window.localStorage.setItem('expothesis-token', res.data.token);
+                window.localStorage.setItem('expothesis-user-id', res.data.user_id);
+                navigate('/home');
+                return;
+            }
             if (!res.data.requires_otp) {
                 const tokenRes = await authApi.verifyOtp({ email, code: '' });
                 window.localStorage.setItem('expothesis-token', tokenRes.data.token);
@@ -126,6 +147,12 @@ export const RegisterPage: React.FC = () => {
         setError(null);
         try {
             const res = await authApi.register({ email, password });
+            if (res.data.token && res.data.user_id) {
+                window.localStorage.setItem('expothesis-token', res.data.token);
+                window.localStorage.setItem('expothesis-user-id', res.data.user_id);
+                navigate('/home');
+                return;
+            }
             if (!res.data.requires_otp) {
                 const tokenRes = await authApi.verifyOtp({ email, code: '' });
                 window.localStorage.setItem('expothesis-token', tokenRes.data.token);

@@ -47,10 +47,13 @@ impl AuthService {
         .await
         .context("Failed to create user")?;
 
+        let token = self.issue_token(user_id).await?;
         Ok(AuthStatusResponse {
             requires_otp: false,
             totp_enabled: false,
             dev_code: None,
+            token: Some(token.token),
+            user_id: Some(token.user_id),
         })
     }
 
@@ -85,10 +88,23 @@ impl AuthService {
         self.verify_password(password, &user.password_hash)?;
 
         let dev_code = None;
+        if user.totp_enabled {
+            return Ok(AuthStatusResponse {
+                requires_otp: true,
+                totp_enabled: true,
+                dev_code,
+                token: None,
+                user_id: None,
+            });
+        }
+
+        let token = self.issue_token(user.id).await?;
         Ok(AuthStatusResponse {
-            requires_otp: user.totp_enabled,
-            totp_enabled: user.totp_enabled,
+            requires_otp: false,
+            totp_enabled: false,
             dev_code,
+            token: Some(token.token),
+            user_id: Some(token.user_id),
         })
     }
 
@@ -129,6 +145,15 @@ impl AuthService {
             .execute(&self.db)
             .await
             .context("Failed to enable TOTP")?;
+        Ok(())
+    }
+
+    pub async fn disable_totp(&self, user_id: Uuid) -> Result<()> {
+        sqlx::query("UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE id = $1")
+            .bind(user_id)
+            .execute(&self.db)
+            .await
+            .context("Failed to disable TOTP")?;
         Ok(())
     }
 

@@ -1942,6 +1942,51 @@
   color: #991b1b;
 }
 
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 60;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  max-width: 420px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(2, 6, 23, 0.9);
+  box-shadow: 0 18px 40px -24px rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(12px);
+}
+
+.toast-warning {
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.toast-title {
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.toast-body {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: #cbd5f5;
+}
+
+.toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .toast {
+    right: 16px;
+    left: 16px;
+    max-width: none;
+  }
+}
+
 .theme-light .icon-action {
   border-color: rgba(15, 23, 42, 0.15);
   background: rgba(255, 255, 255, 0.9);

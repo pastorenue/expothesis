@@ -20,11 +20,18 @@ pub fn z_test_proportions(
     successes_b: usize,
     total_b: usize,
 ) -> Result<(f64, f64, f64, f64)> {
+    if total_a == 0 || total_b == 0 {
+        return Ok((0.0, 1.0, 0.0, 0.0));
+    }
     let p1 = successes_a as f64 / total_a as f64;
     let p2 = successes_b as f64 / total_b as f64;
 
     let p_pooled = (successes_a + successes_b) as f64 / (total_a + total_b) as f64;
     let se = (p_pooled * (1.0 - p_pooled) * (1.0 / total_a as f64 + 1.0 / total_b as f64)).sqrt();
+    if !se.is_finite() || se <= 0.0 {
+        let effect_size = p1 - p2;
+        return Ok((effect_size, 1.0, effect_size, effect_size));
+    }
 
     let z = (p1 - p2) / se;
     let normal = Normal::new(0.0, 1.0)?;
@@ -43,6 +50,9 @@ pub fn z_test_proportions(
 
 /// Calculate two-sample t-test for continuous metrics
 pub fn t_test_two_sample(values_a: &[f64], values_b: &[f64]) -> Result<(f64, f64, f64, f64)> {
+    if values_a.len() < 2 || values_b.len() < 2 {
+        return Ok((0.0, 1.0, 0.0, 0.0));
+    }
     let mean_a = values_a.mean();
     let mean_b = values_b.mean();
     let var_a = values_a.variance();
@@ -52,11 +62,19 @@ pub fn t_test_two_sample(values_a: &[f64], values_b: &[f64]) -> Result<(f64, f64
 
     // Welch's t-test (unequal variances)
     let se = (var_a / n_a + var_b / n_b).sqrt();
+    if !se.is_finite() || se <= 0.0 {
+        let effect_size = mean_a - mean_b;
+        return Ok((effect_size, 1.0, effect_size, effect_size));
+    }
     let t_stat = (mean_a - mean_b) / se;
 
     // Welch-Satterthwaite degrees of freedom
     let df = (var_a / n_a + var_b / n_b).powi(2)
         / ((var_a / n_a).powi(2) / (n_a - 1.0) + (var_b / n_b).powi(2) / (n_b - 1.0));
+    if !df.is_finite() || df <= 0.0 {
+        let effect_size = mean_a - mean_b;
+        return Ok((effect_size, 1.0, effect_size, effect_size));
+    }
 
     let students_t = StudentsT::new(0.0, 1.0, df)?;
     let p_value = 2.0 * (1.0 - students_t.cdf(t_stat.abs()));
@@ -81,16 +99,28 @@ pub fn t_test_summary(
     std_b: f64,
     n_b: usize,
 ) -> Result<(f64, f64, f64, f64)> {
+    if n_a < 2 || n_b < 2 {
+        let effect_size = mean_a - mean_b;
+        return Ok((effect_size, 1.0, effect_size, effect_size));
+    }
     let n_a = n_a as f64;
     let n_b = n_b as f64;
 
     let var_a = std_a.powi(2);
     let var_b = std_b.powi(2);
     let se = (var_a / n_a + var_b / n_b).sqrt();
+    if !se.is_finite() || se <= 0.0 {
+        let effect_size = mean_a - mean_b;
+        return Ok((effect_size, 1.0, effect_size, effect_size));
+    }
     let t_stat = (mean_a - mean_b) / se;
 
     let df = (var_a / n_a + var_b / n_b).powi(2)
         / ((var_a / n_a).powi(2) / (n_a - 1.0) + (var_b / n_b).powi(2) / (n_b - 1.0));
+    if !df.is_finite() || df <= 0.0 {
+        let effect_size = mean_a - mean_b;
+        return Ok((effect_size, 1.0, effect_size, effect_size));
+    }
 
     let students_t = StudentsT::new(0.0, 1.0, df)?;
     let p_value = 2.0 * (1.0 - students_t.cdf(t_stat.abs()));

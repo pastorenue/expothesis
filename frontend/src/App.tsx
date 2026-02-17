@@ -560,6 +560,11 @@ function Layout({ children }: { children: React.ReactNode }) {
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const [isRailCollapsed, setIsRailCollapsed] = React.useState(false);
     const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
+    const [idleWarningVisible, setIdleWarningVisible] = React.useState(false);
+    const [idleSecondsLeft, setIdleSecondsLeft] = React.useState(300);
+    const idleWarningTimeoutRef = React.useRef<number | null>(null);
+    const idleLogoutTimeoutRef = React.useRef<number | null>(null);
+    const idleCountdownRef = React.useRef<number | null>(null);
     const navItems = [
         {
             to: '/home',
@@ -685,8 +690,67 @@ function Layout({ children }: { children: React.ReactNode }) {
         window.localStorage.setItem('expothesis-theme', theme);
     }, [theme]);
 
+    const warnAfterMs = 20 * 60 * 1000;
+    const logoutAfterMs = 25 * 60 * 1000;
+
+    const clearIdleTimers = React.useCallback(() => {
+        if (idleWarningTimeoutRef.current) {
+            window.clearTimeout(idleWarningTimeoutRef.current);
+            idleWarningTimeoutRef.current = null;
+        }
+        if (idleLogoutTimeoutRef.current) {
+            window.clearTimeout(idleLogoutTimeoutRef.current);
+            idleLogoutTimeoutRef.current = null;
+        }
+        if (idleCountdownRef.current) {
+            window.clearInterval(idleCountdownRef.current);
+            idleCountdownRef.current = null;
+        }
+    }, []);
+
+    const logout = React.useCallback(() => {
+        window.localStorage.removeItem('expothesis-token');
+        window.localStorage.removeItem('expothesis-user-id');
+        navigate('/login', { replace: true });
+    }, [navigate]);
+
+    const startIdleTimers = React.useCallback(() => {
+        clearIdleTimers();
+        setIdleWarningVisible(false);
+        setIdleSecondsLeft(Math.max(1, Math.floor((logoutAfterMs - warnAfterMs) / 1000)));
+        idleWarningTimeoutRef.current = window.setTimeout(() => {
+            setIdleWarningVisible(true);
+            const deadline = Date.now() + (logoutAfterMs - warnAfterMs);
+            idleCountdownRef.current = window.setInterval(() => {
+                const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                setIdleSecondsLeft(remaining);
+            }, 1000);
+        }, warnAfterMs);
+        idleLogoutTimeoutRef.current = window.setTimeout(() => {
+            logout();
+        }, logoutAfterMs);
+    }, [clearIdleTimers, logout, logoutAfterMs, warnAfterMs]);
+
     const authToken = window.localStorage.getItem('expothesis-token');
     const isPublicRoute = ['/', '/login', '/register'].includes(location.pathname);
+
+    React.useEffect(() => {
+        if (!authToken || isPublicRoute) {
+            clearIdleTimers();
+            setIdleWarningVisible(false);
+            return;
+        }
+        startIdleTimers();
+        const handleActivity = () => {
+            startIdleTimers();
+        };
+        const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'];
+        events.forEach((event) => window.addEventListener(event, handleActivity, { passive: true }));
+        return () => {
+            events.forEach((event) => window.removeEventListener(event, handleActivity));
+            clearIdleTimers();
+        };
+    }, [authToken, clearIdleTimers, isPublicRoute, startIdleTimers]);
 
     if (isPublicRoute) {
         return <>{children}</>;
@@ -866,6 +930,22 @@ function Layout({ children }: { children: React.ReactNode }) {
                     <main className="px-8 py-8">{children}</main>
                 </div>
             </div>
+            {idleWarningVisible && (
+                <div className="toast toast-warning" role="status" aria-live="polite">
+                    <div>
+                        <p className="toast-title">You're about to be signed out</p>
+                        <p className="toast-body">No activity detected. We'll sign you out in {idleSecondsLeft}s.</p>
+                    </div>
+                    <div className="toast-actions">
+                        <button className="btn-secondary" onClick={startIdleTimers}>
+                            Stay signed in
+                        </button>
+                        <button className="btn-danger" onClick={logout}>
+                            Sign out now
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

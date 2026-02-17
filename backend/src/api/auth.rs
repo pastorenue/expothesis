@@ -2,7 +2,14 @@ use actix_web::{web, HttpResponse, Responder};
 use uuid::Uuid;
 
 use crate::config::Config;
-use crate::models::{EnableTotpRequest, LoginRequest, RegisterRequest, VerifyOtpRequest, VerifyTotpRequest};
+use crate::models::{
+    DisableTotpRequest,
+    EnableTotpRequest,
+    LoginRequest,
+    RegisterRequest,
+    VerifyOtpRequest,
+    VerifyTotpRequest,
+};
 use crate::services::AuthService;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -13,6 +20,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/verify-otp", web::post().to(verify_otp))
             .route("/totp/setup", web::post().to(setup_totp))
             .route("/totp/verify", web::post().to(verify_totp))
+            .route("/totp/disable", web::post().to(disable_totp))
             .route("/me/{id}", web::get().to(me)),
     );
 }
@@ -75,6 +83,18 @@ async fn verify_totp(
 ) -> impl Responder {
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
     match service.verify_totp(payload.user_id, &payload.code).await {
+        Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
+        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+    }
+}
+
+async fn disable_totp(
+    pool: web::Data<sqlx::PgPool>,
+    config: web::Data<Config>,
+    payload: web::Json<DisableTotpRequest>,
+) -> impl Responder {
+    let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
+    match service.disable_totp(payload.user_id).await {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
         Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
     }

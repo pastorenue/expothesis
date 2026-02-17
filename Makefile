@@ -4,7 +4,7 @@ up:
 	docker-compose up --build
 
 up-ai:
-	docker-compose --profile ai up --build
+	docker-compose --profile ai up -d --build
 
 down:
 	docker-compose down
@@ -14,7 +14,7 @@ build:
 
 restart:
 	docker-compose down
-	docker-compose --profile ai up --build
+	docker-compose --profile ai up -d --build
 
 logs:
 	docker-compose logs -f --tail=200
@@ -27,17 +27,17 @@ test:
 	$(MAKE) test-frontend
 
 test-backend:
-	cd backend && cargo test
+	docker-compose run --rm backend cargo test
 
 test-frontend:
-	cd frontend && npm run test --if-present
+	docker-compose run --rm frontend npm run test --if-present
 
 lint:
 	$(MAKE) lint-backend
 	$(MAKE) lint-frontend
 
 lint-backend:
-	docker-compose run --rm backend-dev cargo fmt -- --check
+	docker-compose run --rm backend cargo fmt -- --check
 
 lint-frontend:
 	docker-compose run --rm frontend sh -c "npm install --no-package-lock && npm run lint"
@@ -47,7 +47,7 @@ typecheck:
 	$(MAKE) typecheck-frontend
 
 typecheck-backend:
-	docker-compose run --rm backend-dev cargo check
+	docker-compose run --rm backend cargo check
 
 typecheck-frontend:
 	docker-compose run --rm frontend sh -c "npm install --no-package-lock && npm run typecheck"
