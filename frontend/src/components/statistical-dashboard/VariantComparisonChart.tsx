@@ -48,7 +48,7 @@ const Violin: React.FC<{ id: string; percent: number }> = ({ id, percent }) => {
     const path = `${leftPath} ${rightPath} Z`;
 
     // Jittered dots to mimic real sample points around the center value.
-    const dots = Array.from({ length: 18 }, (_, i) => {
+    const dots = Array.from({ length: 18 }, () => {
         const y = clamped + (Math.random() - 0.5) * sigma * 1.6;
         const x = width / 2 + (Math.random() - 0.5) * 22;
         return { x, y: Math.max(0, Math.min(100, y)) };
@@ -90,12 +90,6 @@ export const VariantComparisonChart: React.FC<VariantComparisonChartProps> = ({ 
     const hasAdjusted = data.some((d) => d.adjustedPValue !== undefined && d.adjustedPValue !== null);
     const hasPosterior = data.some((d) => d.posterior !== undefined && d.posterior !== null);
     const [metric, setMetric] = React.useState<'p' | 'adjusted' | 'posterior'>(hasAdjusted ? 'adjusted' : 'p');
-
-    const metricValue = (row: VariantComparisonDatum) => {
-        if (metric === 'p') return row.pValue;
-        if (metric === 'adjusted') return row.adjustedPValue ?? row.pValue;
-        return row.posterior ?? row.pValue;
-    };
 
     const metricLabel =
         metric === 'p' ? 'p-value' : metric === 'adjusted' ? 'Adjusted p-value' : 'Posterior';
@@ -147,7 +141,6 @@ export const VariantComparisonChart: React.FC<VariantComparisonChartProps> = ({ 
                         {data.map((row) => {
                             const lift = row.effectSize * 100;
                             const positive = lift >= 0;
-                            const mVal = metricValue(row);
                             return (
                                 <tr key={row.name} className="border-t border-slate-800/70">
                                     <td className="px-3 py-3 font-semibold text-slate-100">{row.name}</td>

@@ -27,7 +27,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
         color: 'var(--chart-tooltip-text)',
     };
 
-    const { experiment, results, sample_sizes, cuped_adjusted_results, cuped_error } = analysis;
+    const { experiment, results, sample_sizes, cuped_adjusted_results } = analysis;
 
     // Determine which results to display
     const activeResults: Array<StatisticalResult | CupedAdjustedResult> =
