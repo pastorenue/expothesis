@@ -293,10 +293,17 @@ impl AuthService {
         )
         .context("Failed to encode JWT")?;
 
-        sqlx::query("INSERT INTO sessions (user_id, token_id, expires_at) VALUES ($1, $2, $3)")
+        // Pick a default org for the session to satisfy NOT NULL org_id
+        let default_org: Option<Uuid> = sqlx::query_scalar("SELECT id FROM organizations ORDER BY created_at ASC LIMIT 1")
+            .fetch_optional(&self.db)
+            .await
+            .context("Failed to find default organization")?;
+
+        sqlx::query("INSERT INTO sessions (user_id, token_id, expires_at, org_id) VALUES ($1, $2, $3, $4)")
             .bind(user_id)
             .bind(token_id)
             .bind(exp)
+            .bind(default_org.unwrap_or_else(Uuid::nil))
             .execute(&self.db)
             .await
             .context("Failed to store session")?;

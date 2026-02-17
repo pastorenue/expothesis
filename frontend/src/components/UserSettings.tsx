@@ -1,7 +1,7 @@
 import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { authApi, sdkApi } from '../services/api';
-import type { RotateSdkTokensRequest, TotpSetupResponse } from '../types';
+import { authApi, sdkApi, organizationApi } from '../services/api';
+import type { RotateSdkTokensRequest, TotpSetupResponse, Organization } from '../types';
 
 export const UserSettings: React.FC = () => {
     const queryClient = useQueryClient();
@@ -28,6 +28,10 @@ export const UserSettings: React.FC = () => {
             return response.data;
         },
         enabled: Boolean(userId),
+    });
+    const { data: orgs = [] } = useQuery({
+        queryKey: ['organizations'],
+        queryFn: async () => (await organizationApi.list()).data,
     });
     const rotateMutation = useMutation({
         mutationFn: (payload: RotateSdkTokensRequest) => sdkApi.rotateTokens(payload),
@@ -117,7 +121,7 @@ export const UserSettings: React.FC = () => {
             <div>
                 <h1>User Settings</h1>
                 <p className="mt-1 text-slate-400">
-                    Manage your profile, security, and SDK credentials.
+                    Manage your profile, security, organizations, and SDK credentials.
                 </p>
             </div>
 
@@ -135,6 +139,13 @@ export const UserSettings: React.FC = () => {
                             <input className="input" defaultValue="admin@expothesis.local" />
                         </div>
                     </div>
+                </div>
+                <div className="card">
+                    <h3>Organizations</h3>
+                    <p className="mt-2 text-sm text-slate-400">
+                        Switch between orgs and create new ones.
+                    </p>
+                    <OrgManager orgs={orgs} />
                 </div>
                 <div className="card">
                     <h3>Security</h3>
@@ -375,6 +386,75 @@ const isNewNavEnabled = await flags.isEnabled('new-nav', {
                     </div>
                 </div>
             )}
+        </div>
+    );
+};
+
+const OrgManager: React.FC<{ orgs: Organization[] }> = ({ orgs }) => {
+    const queryClient = useQueryClient();
+    const [name, setName] = React.useState('');
+    const [error, setError] = React.useState<string | null>(null);
+    const [success, setSuccess] = React.useState<string | null>(null);
+    const createOrg = useMutation({
+        mutationFn: (orgName: string) => organizationApi.create(orgName),
+        onSuccess: async () => {
+            setName('');
+            setSuccess('Organization created');
+            setError(null);
+            await queryClient.invalidateQueries({ queryKey: ['organizations'] });
+        },
+        onError: (err: unknown) => {
+            const e = err as { response?: { data?: { error?: string } } };
+            setError(e.response?.data?.error || 'Failed to create organization');
+            setSuccess(null);
+        },
+    });
+
+    return (
+        <div className="space-y-4">
+            <div className="space-y-2">
+                <label className="label">Create organization</label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <input
+                        className="input flex-1"
+                        placeholder="e.g. Growth Team"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                    />
+                    <button
+                        className="btn-primary"
+                        disabled={!name.trim() || createOrg.isPending}
+                        onClick={() => {
+                            if (!name.trim()) return;
+                            createOrg.mutate(name.trim());
+                        }}
+                    >
+                        {createOrg.isPending ? 'Adding…' : 'Add org'}
+                    </button>
+                </div>
+                {error && <div className="text-xs text-rose-300">{error}</div>}
+                {success && <div className="text-xs text-emerald-300">{success}</div>}
+            </div>
+
+            <div className="space-y-2">
+                <div className="text-xs uppercase tracking-[0.2em] text-slate-500">Your organizations</div>
+                <div className="divide-y divide-slate-800/60 rounded-xl border border-slate-800/70 bg-slate-950/40">
+                    {orgs.length === 0 && (
+                        <div className="px-4 py-3 text-sm text-slate-400">No organizations yet.</div>
+                    )}
+                    {orgs.map((org) => (
+                        <div key={org.id} className="flex items-center justify-between px-4 py-3 text-sm">
+                            <div>
+                                <div className="font-semibold text-slate-100">{org.name}</div>
+                                <div className="text-xs uppercase tracking-[0.15em] text-slate-500">{org.role}</div>
+                            </div>
+                            <span className="rounded-full bg-slate-800/70 px-3 py-1 text-xs text-slate-300">
+                                {org.id.slice(0, 8)}…
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 };

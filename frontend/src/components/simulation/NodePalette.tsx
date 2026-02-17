@@ -19,7 +19,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
     return (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.2fr_1.2fr_1.2fr_1.2fr]">
             <details className="panel" open>
-                <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
+                <summary className="cursor-pointer text-[0.85rem] font-bold text-slate-300">
                     Anchors
                 </summary>
                 <div className="mt-3 grid max-h-40 grid-cols-2 gap-2 overflow-y-auto pr-1">
@@ -38,12 +38,12 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
                 </div>
             </details>
             <details className="panel">
-                <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
+                <summary className="cursor-pointer text-sm font-bold text-slate-300">
                     Experiments
                 </summary>
                 <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
                     {experiments.length === 0 && (
-                        <p className="text-xs text-slate-500">No experiments available.</p>
+                        <p className="text-sm text-slate-500">No experiments available.</p>
                     )}
                     {experiments.map((exp) => (
                         <button
@@ -63,12 +63,12 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
                 </div>
             </details>
             <details className="panel">
-                <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
+                <summary className="cursor-pointer text-sm font-bold text-slate-300">
                     User Groups
                 </summary>
                 <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
                     {userGroups.length === 0 && (
-                        <p className="text-xs text-slate-500">No user groups available.</p>
+                        <p className="text-sm text-slate-500">No user groups available.</p>
                     )}
                     {userGroups.map((group) => (
                         <button
@@ -88,7 +88,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
                 </div>
             </details>
             <details className="panel">
-                <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
+                <summary className="cursor-pointer text-sm font-bold text-slate-300">
                     Hypothesis
                 </summary>
                 <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">
@@ -112,12 +112,12 @@ export const NodePalette: React.FC<NodePaletteProps> = ({
                         );
                     })}
                     {experiments.every((exp) => !exp.hypothesis) && (
-                        <p className="text-xs text-slate-500">No hypotheses configured.</p>
+                        <p className="text-sm text-slate-500">No hypotheses configured.</p>
                     )}
                 </div>
             </details>
             <details className="panel">
-                <summary className="cursor-pointer text-[0.75rem] font-bold text-slate-400">
+                <summary className="cursor-pointer text-[0.85rem] font-bold text-slate-300">
                     Metrics
                 </summary>
                 <div className="mt-3 max-h-40 space-y-2 overflow-y-auto pr-1">

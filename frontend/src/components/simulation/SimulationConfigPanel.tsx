@@ -33,9 +33,11 @@ export const SimulationConfigPanel: React.FC<SimulationConfigPanelProps> = ({
     setEdges,
 }) => {
     return (
-        <div className="flow-surface mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-3 text-xs text-slate-300">
+        <div className="flow-surface mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800/80 bg-slate-950/60 px-5 py-4 text-sm text-slate-200">
             <div className="flex items-center gap-3">
-                <span className="text-[0.6rem] font-bold title tracking-[0.2em] text-slate-200">Simulation Config:</span>
+                <span className="text-xs font-semibold title tracking-[0.22em] text-slate-100 uppercase">
+                    Simulation Config
+                </span>
                 <button
                     className="btn-secondary"
                     onClick={() =>
@@ -98,7 +100,7 @@ export const SimulationConfigPanel: React.FC<SimulationConfigPanelProps> = ({
                     value={importText}
                     onChange={(event) => setImportText(event.target.value)}
                     placeholder="Paste JSON or YAML flow here..."
-                    className="min-h-[56px] flex-1 rounded-xl border border-slate-800/80 bg-slate-950/80 p-2 text-xs text-slate-200"
+                    className="min-h-[64px] flex-1 rounded-xl border border-slate-800/80 bg-slate-950/80 p-3 text-sm text-slate-100"
                 />
                 <button
                     className="btn-primary"
@@ -120,7 +122,7 @@ export const SimulationConfigPanel: React.FC<SimulationConfigPanelProps> = ({
                     Load
                 </button>
             </div>
-            {importError && <div className="text-xs text-rose-300">{importError}</div>}
+            {importError && <div className="text-sm text-rose-300">{importError}</div>}
         </div>
     );
 };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useSearchParams, useNavigate, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { experimentApi } from './services/api';
+import { experimentApi, organizationApi, authApi } from './services/api';
 import { ExperimentCreator } from './components/ExperimentCreator';
 import { ExperimentMonitor } from './components/experiment/ExperimentMonitor';
 import { StatisticalDashboard } from './components/StatisticalDashboard';
@@ -16,6 +16,8 @@ import { TemplatesPlan } from './components/TemplatesPlan';
 import { LoginPage, RegisterPage } from './components/AuthPages';
 import { LoadingSpinner, StatusBadge } from './components/Common';
 import { UserSettings } from './components/UserSettings';
+import { StatisticalHeader } from './components/statistical-dashboard/StatisticalHeader';
+import { CupedConfigurationModal } from './components/CupedConfigurationModal';
 import type { CreateExperimentRequest, Experiment } from './types';
 import { ExpothesisTracker } from './sdk/expothesis';
 
@@ -265,6 +267,7 @@ function ExperimentDetailPage() {
     const { id } = useParams<{ id: string }>();
     const queryClient = useQueryClient();
     const [useCuped, setUseCuped] = React.useState(false);
+    const [showCupedConfig, setShowCupedConfig] = React.useState(false);
 
     const getMutationErrorMessage = (error: unknown) => {
         const err = error as { response?: { data?: { error?: string } }; message?: string };
@@ -326,6 +329,7 @@ function ExperimentDetailPage() {
 
     if (expLoading) return <LoadingSpinner fullHeight />;
     if (!experiment) return <div>Experiment not found</div>;
+    const isPolling = analysisLoading || (!!experiment && experiment.status === 'running');
 
     return (
         <div className="space-y-6">
@@ -339,15 +343,34 @@ function ExperimentDetailPage() {
                 onPause={() => pauseMutation.mutate()}
                 onStop={() => stopMutation.mutate()}
                 isLoading={startMutation.isPending || pauseMutation.isPending || stopMutation.isPending}
+                extraTopContent={
+                    analysis ? (
+                        <StatisticalHeader
+                            experiment={experiment}
+                            isPolling={isPolling}
+                            useCuped={useCuped}
+                            onToggleCuped={setUseCuped}
+                            onOpenConfig={() => setShowCupedConfig(true)}
+                            cupedError={analysis.cuped_error}
+                            hasCupedResults={Boolean(analysis.cuped_adjusted_results)}
+                        />
+                    ) : null
+                }
             />
 
             {analysisLoading && <LoadingSpinner />}
             {analysis && (
                 <StatisticalDashboard
                     analysis={analysis}
-                    isPolling={analysisLoading || (!!experiment && experiment.status === 'running')}
                     useCuped={useCuped}
-                    onToggleCuped={setUseCuped}
+                />
+            )}
+
+            {analysis && (
+                <CupedConfigurationModal
+                    experimentId={experiment.id}
+                    isOpen={showCupedConfig}
+                    onClose={() => setShowCupedConfig(false)}
                 />
             )}
 
@@ -557,6 +580,7 @@ function LandingPage() {
 function Layout({ children }: { children: React.ReactNode }) {
     const location = useLocation();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const [isRailCollapsed, setIsRailCollapsed] = React.useState(false);
     const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
@@ -565,6 +589,37 @@ function Layout({ children }: { children: React.ReactNode }) {
     const idleWarningTimeoutRef = React.useRef<number | null>(null);
     const idleLogoutTimeoutRef = React.useRef<number | null>(null);
     const idleCountdownRef = React.useRef<number | null>(null);
+    const userId = React.useMemo(() => window.localStorage.getItem('expothesis-user-id') ?? '', []);
+    const { data: userProfile } = useQuery({
+        queryKey: ['me', userId],
+        queryFn: async () => (await authApi.me(userId)).data,
+        enabled: !!userId,
+    });
+    const { data: orgs = [] } = useQuery({
+        queryKey: ['organizations'],
+        queryFn: async () => (await organizationApi.list()).data,
+    });
+    const [activeOrgId, setActiveOrgId] = React.useState(
+        () => window.localStorage.getItem('expothesis-org-id') || ''
+    );
+
+    React.useEffect(() => {
+        if (orgs.length === 0) {
+            return;
+        }
+        const currentExists = activeOrgId && orgs.some((o) => o.id === activeOrgId);
+        if (!currentExists) {
+            const next = orgs[0].id;
+            window.localStorage.setItem('expothesis-org-id', next);
+            setActiveOrgId(next);
+        }
+    }, [activeOrgId, orgs]);
+
+    const handleOrgChange = (orgId: string) => {
+        setActiveOrgId(orgId);
+        window.localStorage.setItem('expothesis-org-id', orgId);
+        queryClient.invalidateQueries();
+    };
     const navItems = [
         {
             to: '/home',
@@ -882,16 +937,37 @@ function Layout({ children }: { children: React.ReactNode }) {
                             >
                                 <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h10" />
-                                </svg>
-                            </button>
-                            <div>
-                                <div className="topbar-meta">Status</div>
-                                <div className="topbar-title">{pageTitle}</div>
-                            </div>
+                    </svg>
+                </button>
+                <div>
+                    <div className="topbar-title">{pageTitle}</div>
+                </div>
+            </div>
+            <div className="flex items-center gap-3">
+                <div className="meta-chip">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-cyan-200">
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 9V4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5V9M3 21h18M4 21v-9.5A1.5 1.5 0 0 1 5.5 10h13A1.5 1.5 0 0 1 20 11.5V21" />
+                        </svg>
+                    </div>
+                    <div className="leading-tight">
+                        <div className="text-sm font-semibold text-slate-100">
+                            {orgs.find((o) => o.id === activeOrgId)?.name ?? 'No org'}
                         </div>
-                        <div className="flex items-center gap-3">
+                    </div>
+                </div>
+                <div className="meta-chip">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-200 font-semibold">
+                        {(userProfile?.email?.[0] || '?').toUpperCase()}
+                    </div>
+                    <div className="leading-tight">
+                                    <div className="text-sm font-semibold text-slate-100">
+                                        {userProfile?.email || '—'}
+                                    </div>
+                                </div>
+                            </div>
                             <button
-                                className="btn-secondary h-10 w-10 p-0"
+                                className="btn-secondary h-8 w-8 p-0"
                                 aria-label="Toggle dark mode"
                                 onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
                             >
@@ -914,17 +990,6 @@ function Layout({ children }: { children: React.ReactNode }) {
                                     </svg>
                                 )}
                             </button>
-                            <div className="meta-chip">
-                                <span className="relative flex h-2 w-2">
-                                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/80"></span>
-                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
-                                </span>
-                                Live stream
-                            </div>
-                            <div className="meta-chip">
-                                <span className="h-2 w-2 rounded-full bg-cyan-400"></span>
-                                5s refresh
-                            </div>
                         </div>
                     </header>
                     <main className="px-8 py-8">{children}</main>

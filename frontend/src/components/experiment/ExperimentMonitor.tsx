@@ -4,8 +4,7 @@ import { ExperimentStatus } from '../../types';
 import { ControlButtons } from './ControlButtons';
 import { HypothesisCard } from './HypothesisCard';
 import { MetaGrid } from './MetaGrid';
-import { MonitorHeader } from './MonitorHeader';
-import { StatusBanner } from './StatusBanner';
+import { StatusBadge } from '../Common';
 import { TrafficDistribution } from './TrafficDistribution';
 
 interface ExperimentMonitorProps {
@@ -14,6 +13,7 @@ interface ExperimentMonitorProps {
     onPause: () => void;
     onStop: () => void;
     isLoading?: boolean;
+    extraTopContent?: React.ReactNode;
 }
 
 export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
@@ -22,6 +22,7 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
     onPause,
     onStop,
     isLoading,
+    extraTopContent,
 }) => {
     const getStatusColor = () => {
         switch (experiment.status) {
@@ -48,20 +49,47 @@ export const ExperimentMonitor: React.FC<ExperimentMonitorProps> = ({
 
     return (
         <div className={`experiment-monitor card border-2 ${getStatusColor()} animate-fade-in`}>
-            <MonitorHeader experiment={experiment} />
-            <HypothesisCard experiment={experiment} />
-            <ControlButtons
-                canStart={canStart}
-                canPause={canPause}
-                canStop={canStop}
-                isLoading={isLoading}
-                onStart={onStart}
-                onPause={onPause}
-                onStop={onStop}
-            />
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-semibold leading-tight text-slate-50">{experiment.name}</h2>
+                        <StatusBadge status={experiment.status} />
+                        {experiment.feature_flag_id && (
+                            <span className="badge-info">Feature Flag Linked</span>
+                        )}
+                        <span className="badge-muted">Primary: {experiment.primary_metric}</span>
+                    </div>
+                    {experiment.description && (
+                        <p className="text-sm text-slate-400 max-w-3xl">{experiment.description}</p>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    <ControlButtons
+                        canStart={canStart}
+                        canPause={canPause}
+                        canStop={canStop}
+                        isLoading={isLoading}
+                        onStart={onStart}
+                        onPause={onPause}
+                        onStop={onStop}
+                    />
+                </div>
+            </div>
+
+            {extraTopContent}
+
+            <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+                <HypothesisCard experiment={experiment} />
+                <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Traffic</p>
+                        <span className="text-xs text-slate-400">{experiment.variants.length} variants</span>
+                    </div>
+                    <TrafficDistribution experiment={experiment} />
+                </div>
+            </div>
+
             <MetaGrid experiment={experiment} formatDate={formatDate} />
-            <TrafficDistribution experiment={experiment} />
-            <StatusBanner status={experiment.status} />
         </div>
     );
 };

@@ -9,6 +9,7 @@ type StatisticalHeaderProps = {
     onOpenConfig: () => void;
     cupedError?: string | null;
     hasCupedResults: boolean;
+    className?: string;
 };
 
 export const StatisticalHeader: React.FC<StatisticalHeaderProps> = ({
@@ -19,9 +20,10 @@ export const StatisticalHeader: React.FC<StatisticalHeaderProps> = ({
     onOpenConfig,
     cupedError,
     hasCupedResults,
+    className,
 }) => {
     return (
-        <div className="card">
+        <div className={`card ${className ?? ''}`}>
             <div className="flex items-center justify-between mb-2">
                 <h2 className="mb-0">{experiment.name}</h2>
                 {isPolling && (

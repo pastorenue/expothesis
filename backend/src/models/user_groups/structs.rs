@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserGroup {
+    pub org_id: Uuid,
     pub id: Uuid,
     pub name: String,
     pub description: String,
@@ -15,6 +16,7 @@ pub struct UserGroup {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserAssignment {
+    pub org_id: Uuid,
     pub user_id: String,
     pub experiment_id: Uuid,
     pub variant: String,

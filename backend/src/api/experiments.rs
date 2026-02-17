@@ -1,7 +1,9 @@
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpResponse, Responder, HttpRequest};
+use actix_web::HttpMessage;
 use uuid::Uuid;
 
 use crate::models::*;
+use crate::middleware::auth::AuthedUser;
 use crate::services::{CupedService, ExperimentService};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -19,11 +21,19 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     );
 }
 
+fn authed(req: &HttpRequest) -> Option<AuthedUser> {
+    req.extensions().get::<AuthedUser>().cloned()
+}
+
 async fn create_experiment(
     service: web::Data<ExperimentService>,
     req: web::Json<CreateExperimentRequest>,
+    http: HttpRequest,
 ) -> impl Responder {
-    match service.create_experiment(req.into_inner()).await {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service.create_experiment(req.into_inner(), user.org_id).await {
         Ok(experiment) => HttpResponse::Created().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -31,8 +41,11 @@ async fn create_experiment(
     }
 }
 
-async fn list_experiments(service: web::Data<ExperimentService>) -> impl Responder {
-    match service.list_experiments().await {
+async fn list_experiments(service: web::Data<ExperimentService>, http: HttpRequest) -> impl Responder {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service.list_experiments(user.org_id).await {
         Ok(experiments) => HttpResponse::Ok().json(experiments),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
@@ -43,8 +56,12 @@ async fn list_experiments(service: web::Data<ExperimentService>) -> impl Respond
 async fn get_experiment(
     service: web::Data<ExperimentService>,
     id: web::Path<Uuid>,
+    http: HttpRequest,
 ) -> impl Responder {
-    match service.get_experiment(id.into_inner()).await {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service.get_experiment(user.org_id, id.into_inner()).await {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::NotFound().json(serde_json::json!({
             "error": e.to_string()
@@ -55,8 +72,12 @@ async fn get_experiment(
 async fn start_experiment(
     service: web::Data<ExperimentService>,
     id: web::Path<Uuid>,
+    http: HttpRequest,
 ) -> impl Responder {
-    match service.start_experiment(id.into_inner()).await {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service.start_experiment(user.org_id, id.into_inner()).await {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -67,8 +88,12 @@ async fn start_experiment(
 async fn pause_experiment(
     service: web::Data<ExperimentService>,
     id: web::Path<Uuid>,
+    http: HttpRequest,
 ) -> impl Responder {
-    match service.pause_experiment(id.into_inner()).await {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service.pause_experiment(user.org_id, id.into_inner()).await {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -79,8 +104,12 @@ async fn pause_experiment(
 async fn stop_experiment(
     service: web::Data<ExperimentService>,
     id: web::Path<Uuid>,
+    http: HttpRequest,
 ) -> impl Responder {
-    match service.stop_experiment(id.into_inner()).await {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service.stop_experiment(user.org_id, id.into_inner()).await {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -93,10 +122,14 @@ async fn get_analysis(
     cuped_service: web::Data<CupedService>,
     id: web::Path<Uuid>,
     query: web::Query<AnalysisQuery>,
+    http: HttpRequest,
 ) -> impl Responder {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
     let experiment_id = id.into_inner();
 
-    match experiment_service.analyze_experiment(experiment_id).await {
+    match experiment_service.analyze_experiment(user.org_id, experiment_id).await {
         Ok(mut analysis) => {
             // If CUPED is requested, run the CUPED analysis on top
             if query.use_cuped.unwrap_or(false) {

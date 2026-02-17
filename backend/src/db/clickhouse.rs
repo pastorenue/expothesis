@@ -34,6 +34,7 @@ impl ClickHouseClient {
         self.client
             .query(
                 "CREATE TABLE IF NOT EXISTS expothesis.experiments (
+                    org_id String DEFAULT 'default-org',
                     id String,
                     name String,
                     description String,
@@ -67,6 +68,7 @@ impl ClickHouseClient {
             .context("Failed to create experiments table")?;
 
         let experiment_alters = [
+            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS org_id String DEFAULT 'default-org'",
             "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS experiment_type String",
             "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS sampling_method String",
             "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS analysis_engine String",
@@ -97,10 +99,18 @@ impl ClickHouseClient {
             .await
             .context("Failed to create user_assignments table")?;
 
+        // Ensure org_id exists on user_assignments
+        self.client
+            .query("ALTER TABLE expothesis.user_assignments ADD COLUMN IF NOT EXISTS org_id String DEFAULT 'default-org'")
+            .execute()
+            .await
+            .context("Failed to alter user_assignments table (org_id)")?;
+
         // Metric events table
         self.client
             .query(
                 "CREATE TABLE IF NOT EXISTS expothesis.metric_events (
+                    org_id String DEFAULT 'default-org',
                     event_id String,
                     experiment_id String,
                     user_id String,
@@ -119,6 +129,7 @@ impl ClickHouseClient {
 
         let metric_event_alters = [
             "ALTER TABLE expothesis.metric_events ADD COLUMN IF NOT EXISTS attributes Nullable(String)",
+            "ALTER TABLE expothesis.metric_events ADD COLUMN IF NOT EXISTS org_id String DEFAULT 'default-org'",
         ];
 
         for alter in metric_event_alters {
@@ -197,6 +208,7 @@ impl ClickHouseClient {
         self.client
             .query(
                 "CREATE TABLE IF NOT EXISTS expothesis.user_groups (
+                    org_id String DEFAULT 'default-org',
                     id String,
                     name String,
                     description String,
@@ -215,6 +227,7 @@ impl ClickHouseClient {
         self.client
             .query(
                 "CREATE TABLE IF NOT EXISTS expothesis.feature_flags (
+                    org_id String DEFAULT 'default-org',
                     id String,
                     name String,
                     description String,
@@ -252,6 +265,7 @@ impl ClickHouseClient {
         self.client
             .query(
                 "CREATE TABLE IF NOT EXISTS expothesis.feature_gates (
+                    org_id String DEFAULT 'default-org',
                     id String,
                     flag_id String,
                     name String,

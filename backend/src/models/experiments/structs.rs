@@ -6,6 +6,7 @@ use super::enums::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Experiment {
+    pub org_id: Uuid,
     pub id: Uuid,
     pub name: String,
     pub description: String,

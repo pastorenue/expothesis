@@ -24,6 +24,16 @@ const nodeBadgeClass = (kind: FlowNode['kind']) =>
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 72;
 const HANDLE_CENTER_OFFSET = 10;
+const normalCdf = (z: number) => {
+    const t = 1 / (1 + 0.2316419 * Math.abs(z));
+    const d = 0.3989423 * Math.exp(-0.5 * z * z);
+    const prob =
+        d *
+        t *
+        (0.3193815 +
+            t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+    return z > 0 ? 1 - prob : prob;
+};
 
 export const SimulationStudio: React.FC = () => {
     const { data: experiments = [] } = useQuery({
@@ -51,9 +61,12 @@ export const SimulationStudio: React.FC = () => {
     const eventCounter = React.useRef<Record<string, number>>({});
     const variantCounter = React.useRef<Record<string, number>>({});
     const groupVariantCounter = React.useRef<Record<string, number>>({});
+    const assignmentCounter = React.useRef<Record<string, number>>({});
+    const conversionCounter = React.useRef<Record<string, number>>({});
     const groupRateRef = React.useRef<Record<string, number>>({});
     const currentExperimentIdRef = React.useRef<string | null>(null);
     const groupIdsRef = React.useRef<string[]>([]);
+    const metricIdsRef = React.useRef<string[]>([]);
     const simulationKeyRef = React.useRef<string | null>(null);
     const [nodes, setNodes] = React.useState<FlowNode[]>([]);
     const [edges, setEdges] = React.useState<FlowEdge[]>([]);
@@ -633,6 +646,10 @@ export const SimulationStudio: React.FC = () => {
         })
         .map((edge) => edge.from);
 
+    React.useEffect(() => {
+        metricIdsRef.current = connectedMetricIds;
+    }, [connectedMetricIds]);
+
     const connectedGroupNodeIds = groupNodes
         .filter((node) => connectedGroupIds.includes(node.data!.groupId!))
         .map((node) => node.id);
@@ -646,35 +663,51 @@ export const SimulationStudio: React.FC = () => {
     );
     const connectedGroups = userGroups.filter((group) => fullyConnectedGroupIds.includes(group.id));
 
-    const aggregatedSeries = React.useMemo(() => {
+    const metricAssignKey = React.useCallback((metricId: string, variant: string) => `${metricId}::${variant}::assign`, []);
+    const metricConvKey = React.useCallback((metricId: string, variant: string) => `${metricId}::${variant}::conv`, []);
+
+    const metricsSummary = React.useMemo(() => {
         if (!selectedExperiment) return [];
         const variants = selectedExperiment.variants.map((variant) => variant.name);
-        return filteredSeries.map((point) => {
-            const next: { time: string; ts: number; [key: string]: string | number } = {
-                time: String(point.time ?? ''),
-                ts: Number(point.ts ?? 0),
-            };
-            variants.forEach((variant) => {
-                let sum = 0;
-                fullyConnectedGroupIds.forEach((groupId) => {
-                    const key = getGroupVariantKey(groupId, variant);
-                    const value = point[key];
-                    if (typeof value === 'number') sum += value;
-                });
-                next[variant] = sum;
-            });
-            return next;
-        });
-    }, [filteredSeries, fullyConnectedGroupIds, selectedExperiment]);
+        if (variants.length < 2) return [];
+        const control = variants[0];
+        const latest = filteredSeries[filteredSeries.length - 1];
+        if (!latest) return [];
 
-    const metricNodesForCharts = metricNodes.filter((node) => {
-        const incoming = edges.some((edge) => {
-            if (edge.to !== node.id) return false;
-            const from = getNodeById(edge.from);
-            return from?.kind === 'user-group' || from?.kind === 'hypothesis';
-        });
-        return incoming && reachableFromStart.has(node.id) && reachableToRun.has(node.id);
-    });
+        return metricNodes
+            .filter((node) => connectedMetricIds.includes(node.id))
+            .map((node) => {
+                const metricId = node.id;
+                const label = node.data?.metric || node.label;
+
+                const getRateData = (variant: string) => {
+                    const assign = Number(latest[metricAssignKey(metricId, variant)] ?? 0);
+                    const conv = Number(latest[metricConvKey(metricId, variant)] ?? 0);
+                    const rate = assign > 0 ? conv / assign : 0;
+                    return { assign, conv, rate };
+                };
+
+                const base = getRateData(control);
+                const variation = getRateData(variants[1]);
+                const lift = base.rate > 0 ? (variation.rate - base.rate) / base.rate : 0;
+
+                const p = Math.max(1e-9, (base.conv + variation.conv) / Math.max(1, base.assign + variation.assign));
+                const se = Math.sqrt(p * (1 - p) * (1 / Math.max(1, base.assign) + 1 / Math.max(1, variation.assign)));
+                const z = se > 0 ? (variation.rate - base.rate) / se : 0;
+                const chance = normalCdf(z);
+                const pValue = 2 * (1 - normalCdf(Math.abs(z)));
+
+                return {
+                    id: metricId,
+                    label,
+                    baseline: { rate: base.rate, assign: base.assign, conv: base.conv },
+                    variation: { rate: variation.rate, assign: variation.assign, conv: variation.conv },
+                    lift,
+                    chanceToWin: chance,
+                    pValue,
+                };
+            });
+    }, [connectedMetricIds, filteredSeries, metricAssignKey, metricConvKey, metricNodes, selectedExperiment]);
 
     const startSatisfied = !startNode || hasOutgoing(startNode.id);
     const canAutoStart =
@@ -734,8 +767,9 @@ export const SimulationStudio: React.FC = () => {
                 try {
                     const now = new Date();
                     const timeLabel = now.toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
-                    const updates: Record<string, number> = {};
+                    const metricIds = metricIdsRef.current;
                     const activeGroupIds = groupIdsRef.current;
+
                     for (const groupId of activeGroupIds) {
                         if (!groupRateRef.current[groupId]) {
                             groupRateRef.current[groupId] = 0.6 + Math.random() * 1.4;
@@ -754,11 +788,35 @@ export const SimulationStudio: React.FC = () => {
                             } catch (error) {
                                 console.warn('Flow simulation assign failed', error);
                             }
+
                             eventCounter.current[groupId] = (eventCounter.current[groupId] || 0) + 1;
                             const gvKey = getGroupVariantKey(groupId, variant);
                             groupVariantCounter.current[gvKey] = (groupVariantCounter.current[gvKey] || 0) + 1;
+
                             const baselineRate = variant.toLowerCase().includes('control') ? 0.1 : 0.12;
-                            if (Math.random() < baselineRate) {
+                            const didConvert = Math.random() < baselineRate;
+
+                            const globalAssignKey = metricAssignKey('global', variant);
+                            assignmentCounter.current[globalAssignKey] =
+                                (assignmentCounter.current[globalAssignKey] || 0) + 1;
+                            if (didConvert) {
+                                const globalConvKey = metricConvKey('global', variant);
+                                conversionCounter.current[globalConvKey] =
+                                    (conversionCounter.current[globalConvKey] || 0) + 1;
+                            }
+
+                            metricIds.forEach((metricId: string) => {
+                                const assignKey = metricAssignKey(metricId, variant);
+                                assignmentCounter.current[assignKey] = (assignmentCounter.current[assignKey] || 0) + 1;
+                                const metricRate = baselineRate * (1 + 0.1 * Math.random());
+                                if (Math.random() < metricRate) {
+                                    const convKey = metricConvKey(metricId, variant);
+                                    conversionCounter.current[convKey] =
+                                        (conversionCounter.current[convKey] || 0) + 1;
+                                }
+                            });
+
+                            if (didConvert) {
                                 try {
                                     await eventApi.ingest({
                                         experiment_id: selectedExperiment.id,
@@ -773,26 +831,39 @@ export const SimulationStudio: React.FC = () => {
                                 }
                             }
                         }
-                        updates[groupId] = eventCounter.current[groupId] || 0;
                     }
+
                     setSimulationSeries((prev) => {
                         const last = prev[prev.length - 1] || {};
                         const nextPoint: { time: string; ts: number; [key: string]: string | number } = {
                             time: timeLabel,
                             ts: now.getTime(),
                         };
-                    for (const groupId of activeGroupIds) {
-                        for (const variant of variants) {
-                            const key = getGroupVariantKey(groupId, variant);
-                            const lastValue = typeof last[key] === 'number' ? (last[key] as number) : 0;
-                            nextPoint[key] = groupVariantCounter.current[key] ?? lastValue;
+
+                        for (const groupId of activeGroupIds) {
+                            for (const variant of variants) {
+                                const key = getGroupVariantKey(groupId, variant);
+                                const lastValue = typeof last[key] === 'number' ? (last[key] as number) : 0;
+                                nextPoint[key] = groupVariantCounter.current[key] ?? lastValue;
+                            }
                         }
-                    }
-                    return [...prev, nextPoint];
-                });
-            } catch (error) {
-                console.error('Flow simulation error', error);
-            }
+
+                        metricIds.forEach((metricId: string) => {
+                            for (const variant of variants) {
+                                const assignKey = metricAssignKey(metricId, variant);
+                                const convKey = metricConvKey(metricId, variant);
+                                const lastAssign = typeof last[assignKey] === 'number' ? (last[assignKey] as number) : 0;
+                                const lastConv = typeof last[convKey] === 'number' ? (last[convKey] as number) : 0;
+                                nextPoint[assignKey] = assignmentCounter.current[assignKey] ?? lastAssign;
+                                nextPoint[convKey] = conversionCounter.current[convKey] ?? lastConv;
+                            }
+                        });
+
+                        return [...prev, nextPoint];
+                    });
+                } catch (error) {
+                    console.error('Flow simulation error', error);
+                }
             };
             void run();
         }, 800);
@@ -921,13 +992,13 @@ export const SimulationStudio: React.FC = () => {
     const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
 
     return (
-        <div className="flow-studio space-y-6">
+        <div className="flow-studio space-y-6 text-[15px] leading-relaxed">
             <SimulationHeader />
 
             <div className="card relative overflow-hidden">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(56,189,248,0.15)_0,transparent_45%)] opacity-60"></div>
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(16,185,129,0.15)_0,transparent_40%)]"></div>
-                <div className="relative">
+                <div className="relative text-[15px] leading-relaxed">
                     <SimulationConfigPanel
                         nodes={nodes}
                         edges={edges}
@@ -1285,9 +1356,7 @@ export const SimulationStudio: React.FC = () => {
                             applyPickerValue={(value) => applyPickerValue(value)}
                             selectedExperiment={selectedExperiment}
                             connectedGroups={connectedGroups}
-                            hypothesisNodes={hypothesisNodes}
-                            metricNodesForCharts={metricNodesForCharts}
-                            aggregatedSeries={aggregatedSeries}
+                            metricsSummary={metricsSummary}
                             isSimulating={isSimulating}
                             isPaused={isPaused}
                             flowConnected={flowConnected}
