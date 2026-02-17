@@ -26,6 +26,11 @@ pub struct EnableTotpRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct DisableTotpRequest {
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct VerifyTotpRequest {
     pub user_id: Uuid,
     pub code: String,
@@ -36,6 +41,8 @@ pub struct AuthStatusResponse {
     pub requires_otp: bool,
     pub totp_enabled: bool,
     pub dev_code: Option<String>,
+    pub token: Option<String>,
+    pub user_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize)]

@@ -39,6 +39,7 @@ import type {
     TotpSetupResponse,
     SdkTokensResponse,
     RotateSdkTokensRequest,
+    AuthUserProfile,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -59,8 +60,32 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
-const TRACKING_KEY = import.meta.env.VITE_TRACKING_KEY;
-const trackingHeaders = TRACKING_KEY ? { 'x-expothesis-key': TRACKING_KEY } : undefined;
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error?.response?.status;
+        const requestUrl = error?.config?.url ?? '';
+        const token = window.localStorage.getItem('expothesis-token');
+        if (status === 401 && token) {
+            if (!requestUrl.includes('/track/')) {
+                window.localStorage.removeItem('expothesis-token');
+                window.localStorage.removeItem('expothesis-user-id');
+                if (window.location.pathname !== '/login') {
+                    window.location.assign('/login');
+                }
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
+const getTrackingHeaders = () => {
+    const envKey = import.meta.env.VITE_TRACKING_KEY as string | undefined;
+    const storedKey = window.localStorage.getItem('expothesis-tracking-key') ?? '';
+    const fallbackKey = 'expothesis-demo-key';
+    const key = envKey || storedKey || fallbackKey;
+    return key ? { 'x-expothesis-key': key } : undefined;
+};
 
 // Experiments
 export const experimentApi = {
@@ -163,25 +188,25 @@ export const featureGateApi = {
 // Tracking
 export const trackApi = {
     startSession: (data: StartSessionRequest) =>
-        api.post<StartSessionResponse>('/track/session/start', data, { headers: trackingHeaders }),
+        api.post<StartSessionResponse>('/track/session/start', data, { headers: getTrackingHeaders() }),
 
     endSession: (data: EndSessionRequest) =>
-        api.post<Session>('/track/session/end', data, { headers: trackingHeaders }),
+        api.post<Session>('/track/session/end', data, { headers: getTrackingHeaders() }),
 
     trackEvent: (data: TrackEventRequest) =>
-        api.post<ActivityEvent>('/track/event', data, { headers: trackingHeaders }),
+        api.post<ActivityEvent>('/track/event', data, { headers: getTrackingHeaders() }),
 
     trackReplay: (data: TrackReplayRequest) =>
-        api.post('/track/replay', data, { headers: trackingHeaders }),
+        api.post('/track/replay', data, { headers: getTrackingHeaders() }),
 
     listSessions: (limit = 20, offset = 0, signal?: AbortSignal) =>
-        api.get<ListSessionsResponse>('/track/sessions', { params: { limit, offset }, headers: trackingHeaders, signal }),
+        api.get<ListSessionsResponse>('/track/sessions', { params: { limit, offset }, headers: getTrackingHeaders(), signal }),
 
     getReplay: (sessionId: string, limit = 1200, offset = 0, signal?: AbortSignal) =>
-        api.get<import('../types').ReplayEvent[]>(`/track/replay/${sessionId}`, { params: { limit, offset }, headers: trackingHeaders, signal }),
+        api.get<import('../types').ReplayEvent[]>(`/track/replay/${sessionId}`, { params: { limit, offset }, headers: getTrackingHeaders(), signal }),
 
     listEvents: (sessionId: string, eventType?: string, limit = 200, signal?: AbortSignal) =>
-        api.get<ActivityEvent[]>('/track/events', { params: { session_id: sessionId, event_type: eventType, limit }, headers: trackingHeaders, signal }),
+        api.get<ActivityEvent[]>('/track/events', { params: { session_id: sessionId, event_type: eventType, limit }, headers: getTrackingHeaders(), signal }),
 };
 
 // Analytics
@@ -210,6 +235,10 @@ export const authApi = {
         api.post<TotpSetupResponse>('/auth/totp/setup', { user_id }),
     verifyTotp: (user_id: string, code: string) =>
         api.post('/auth/totp/verify', { user_id, code }),
+    disableTotp: (user_id: string) =>
+        api.post('/auth/totp/disable', { user_id }),
+    me: (user_id: string) =>
+        api.get<AuthUserProfile>(`/auth/me/${user_id}`),
 };
 
 // SDK Tokens

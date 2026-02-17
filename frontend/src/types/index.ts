@@ -242,6 +242,8 @@ export interface AuthStatusResponse {
     requires_otp: boolean;
     totp_enabled: boolean;
     dev_code?: string;
+    token?: string;
+    user_id?: string;
 }
 
 export interface AuthTokenResponse {
@@ -252,6 +254,13 @@ export interface AuthTokenResponse {
 export interface TotpSetupResponse {
     secret: string;
     otpauth_url: string;
+}
+
+export interface AuthUserProfile {
+    id: string;
+    email: string;
+    totp_enabled: boolean;
+    created_at: string;
 }
 
 export interface SdkTokensResponse {

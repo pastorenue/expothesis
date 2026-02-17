@@ -12,12 +12,22 @@ export const UserSettings: React.FC = () => {
     const [totpEnabled, setTotpEnabled] = React.useState(false);
     const [totpError, setTotpError] = React.useState<string | null>(null);
     const [totpSuccess, setTotpSuccess] = React.useState<string | null>(null);
+    const userId = window.localStorage.getItem('expothesis-user-id') ?? '';
     const { data, isLoading } = useQuery({
         queryKey: ['sdk-tokens'],
         queryFn: async () => {
             const response = await sdkApi.getTokens();
             return response.data;
         },
+    });
+    const { data: authProfile } = useQuery({
+        queryKey: ['auth-profile', userId],
+        queryFn: async () => {
+            if (!userId) return null;
+            const response = await authApi.me(userId);
+            return response.data;
+        },
+        enabled: Boolean(userId),
     });
     const rotateMutation = useMutation({
         mutationFn: (payload: RotateSdkTokensRequest) => sdkApi.rotateTokens(payload),
@@ -28,7 +38,6 @@ export const UserSettings: React.FC = () => {
 
     const trackingKey = data?.tracking_api_key ?? '—';
     const featureFlagsKey = data?.feature_flags_api_key ?? '—';
-    const userId = window.localStorage.getItem('expothesis-user-id') ?? '';
 
     const handleCopy = async (value: string, kind: 'tracking' | 'feature_flags') => {
         if (!value || value === '—') return;
@@ -79,6 +88,30 @@ export const UserSettings: React.FC = () => {
         }
     };
 
+    const handleTotpDisable = async () => {
+        setTotpError(null);
+        setTotpSuccess(null);
+        if (!userId) {
+            setTotpError('Missing user session. Please sign in again.');
+            return;
+        }
+        try {
+            await authApi.disableTotp(userId);
+            setTotpEnabled(false);
+            setTotpSetup(null);
+            setTotpCode('');
+            setTotpSuccess('Authenticator removed.');
+        } catch (err: unknown) {
+            const error = err as { response?: { data?: { error?: string } } };
+            setTotpError(error.response?.data?.error || 'Failed to disable authenticator');
+        }
+    };
+
+    React.useEffect(() => {
+        if (!authProfile) return;
+        setTotpEnabled(authProfile.totp_enabled);
+    }, [authProfile]);
+
     return (
         <div className="space-y-6">
             <div>
@@ -112,9 +145,16 @@ export const UserSettings: React.FC = () => {
                                 <p className="font-semibold text-slate-100">Authenticator app</p>
                                 <p className="text-xs text-slate-500">{totpEnabled ? 'Enabled' : 'Not configured'}</p>
                             </div>
-                            <button className="btn-secondary" onClick={handleTotpSetup}>
-                                {totpSetup ? 'Regenerate' : 'Set up'}
-                            </button>
+                            <div className="flex items-center gap-2">
+                                {totpEnabled && (
+                                    <button className="btn-secondary" onClick={handleTotpDisable}>
+                                        Remove
+                                    </button>
+                                )}
+                                <button className="btn-secondary" onClick={handleTotpSetup}>
+                                    {totpSetup ? 'Regenerate' : 'Set up'}
+                                </button>
+                            </div>
                         </div>
                         {totpSetup && (
                             <div className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-4 text-sm text-slate-300">

@@ -107,7 +107,16 @@ export const SimulationStudio: React.FC = () => {
         refetchInterval: 5000,
     });
 
-    const signalCount = analysis?.sample_sizes?.reduce((sum, item) => sum + item.current_size, 0) ?? 0;
+    const signalCount = React.useMemo(() => {
+        if (simulationSeries.length > 0) {
+            const last = simulationSeries[simulationSeries.length - 1];
+            return Object.entries(last).reduce((sum, [key, value]) => {
+                if (key === 'time' || key === 'ts') return sum;
+                return typeof value === 'number' ? sum + value : sum;
+            }, 0);
+        }
+        return analysis?.sample_sizes?.reduce((sum, item) => sum + item.current_size, 0) ?? 0;
+    }, [analysis, simulationSeries]);
     const topResults = analysis?.results?.slice(0, 3) ?? [];
     const formatDateTime = React.useCallback((date: Date) => {
         const pad = (value: number) => String(value).padStart(2, '0');
