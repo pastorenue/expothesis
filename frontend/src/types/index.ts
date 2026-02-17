@@ -222,6 +222,13 @@ export interface AiModelsResponse {
     models: string[];
 }
 
+export interface Organization {
+    id: string;
+    name: string;
+    created_at: string;
+    role: string;
+}
+
 export interface RegisterRequest {
     email: string;
     password: string;

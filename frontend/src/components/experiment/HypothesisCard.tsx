@@ -9,7 +9,7 @@ export const HypothesisCard: React.FC<HypothesisCardProps> = ({ experiment }) =>
     if (!experiment.hypothesis) return null;
 
     return (
-        <div className="mb-6 rounded-2xl bg-slate-950/60 p-4 border border-slate-800/70">
+        <div className="rounded-xl bg-slate-950/40 p-3 border border-slate-800/70">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Hypothesis</h3>
             <div className="space-y-3">
                 <div>

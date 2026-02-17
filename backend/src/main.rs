@@ -93,13 +93,16 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         let cors = Cors::default()
-            .allow_any_origin()
+            .allowed_origin("http://localhost:3000")
+            .allowed_origin("http://localhost:3001")
             .allow_any_method()
             .allow_any_header()
+            .supports_credentials()
             .max_age(3600);
 
         App::new()
             .wrap(cors)
+            .wrap(AuthMiddleware::new(pg_pool_data.get_ref().clone(), config_data.get_ref().clone()))
             .app_data(experiment_service.clone())
             .app_data(cuped_service.clone())
             .app_data(user_group_service.clone())
@@ -110,13 +113,13 @@ async fn main() -> std::io::Result<()> {
             .app_data(tracking_service.clone())
             .app_data(pg_pool_data.clone())
             .app_data(config_data.clone())
-            .wrap(AuthMiddleware::new(pg_pool_data.get_ref().clone(), config_data.get_ref().clone()))
             .configure(api::experiments::configure)
             .configure(api::user_groups::configure)
             .configure(api::events::configure)
             .configure(api::analytics::configure)
             .configure(api::feature_flags::configure)
             .configure(api::feature_gates::configure)
+            .configure(api::organizations::configure)
             .configure(api::track::configure)
             .configure(api::sdk::configure)
             .configure(api::ai::configure)

@@ -40,6 +40,7 @@ import type {
     SdkTokensResponse,
     RotateSdkTokensRequest,
     AuthUserProfile,
+    Organization,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -53,9 +54,14 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
     const token = window.localStorage.getItem('expothesis-token');
+    const orgId = window.localStorage.getItem('expothesis-org-id');
     if (token) {
         config.headers = config.headers ?? {};
         config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (orgId) {
+        config.headers = config.headers ?? {};
+        config.headers['X-Org-Id'] = orgId;
     }
     return config;
 });
@@ -183,6 +189,12 @@ export const featureGateApi = {
 
     evaluate: (id: string, data: EvaluateFeatureGateRequest) =>
         api.post<FeatureGateEvaluationResponse>(`/feature-gates/${id}/evaluate`, data),
+};
+
+// Organizations
+export const organizationApi = {
+    list: () => api.get<Organization[]>('/organizations'),
+    create: (name: string) => api.post('/organizations', { name }),
 };
 
 // Tracking

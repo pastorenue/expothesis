@@ -1,31 +1,24 @@
 import React from 'react';
 import type { CupedAdjustedResult, ExperimentAnalysis, StatisticalResult } from '../types';
-import { CupedConfigurationModal } from './CupedConfigurationModal';
 import { CupedImpactAnalysis } from './statistical-dashboard/CupedImpactAnalysis';
 import { EffectSizeChart } from './statistical-dashboard/EffectSizeChart';
 import { EventIngestionCard } from './statistical-dashboard/EventIngestionCard';
 import { HealthChecksPanel } from './statistical-dashboard/HealthChecksPanel';
-import { HypothesisSummary } from './statistical-dashboard/HypothesisSummary';
 import { InsightsCard } from './statistical-dashboard/InsightsCard';
 import { KeyMetricsGrid } from './statistical-dashboard/KeyMetricsGrid';
 import { SampleSizeProgressCard } from './statistical-dashboard/SampleSizeProgressCard';
-import { StatisticalHeader } from './statistical-dashboard/StatisticalHeader';
 import { StatisticalResultsCard } from './statistical-dashboard/StatisticalResultsCard';
 import { VarianceReductionGrid } from './statistical-dashboard/VarianceReductionGrid';
 import { VariantComparisonChart } from './statistical-dashboard/VariantComparisonChart';
 
 interface StatisticalDashboardProps {
     analysis: ExperimentAnalysis;
-    isPolling?: boolean;
     useCuped?: boolean;
-    onToggleCuped?: (enabled: boolean) => void;
 }
 
 export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
     analysis,
-    isPolling,
     useCuped = false,
-    onToggleCuped,
 }) => {
     const tooltipStyles = {
         backgroundColor: 'var(--chart-tooltip-bg)',
@@ -35,7 +28,6 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
     };
 
     const { experiment, results, sample_sizes, cuped_adjusted_results, cuped_error } = analysis;
-    const [showConfigModal, setShowConfigModal] = React.useState(false);
 
     // Determine which results to display
     const activeResults: Array<StatisticalResult | CupedAdjustedResult> =
@@ -146,30 +138,22 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
     // Prepare data for charts
     const variantComparison = displayResults.map((result) => ({
         name: `${result.variant_b} vs ${result.variant_a}`,
-        control: result.mean_a,
-        treatment: result.mean_b,
+        variantA: result.variant_a,
+        variantB: result.variant_b,
+        meanA: result.mean_a,
+        meanB: result.mean_b,
         effectSize: result.effect_size,
         ciLower: result.confidence_interval_lower,
         ciUpper: result.confidence_interval_upper,
+        pValue: result.p_value,
+        adjustedPValue: (cuped_adjusted_results || []).find(
+            (r) => r.variant_a === result.variant_a && r.variant_b === result.variant_b
+        )?.adjusted_p_value,
+        posterior: result.bayes_probability ?? null,
     }));
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <StatisticalHeader
-                experiment={experiment}
-                isPolling={isPolling}
-                useCuped={useCuped}
-                onToggleCuped={onToggleCuped}
-                onOpenConfig={() => setShowConfigModal(true)}
-                cupedError={cuped_error}
-                hasCupedResults={Boolean(cuped_adjusted_results)}
-            />
-
-            <CupedConfigurationModal
-                experimentId={experiment.id}
-                isOpen={showConfigModal}
-                onClose={() => setShowConfigModal(false)}
-            />
 
             {insights && <InsightsCard headline={insights.headline} bullets={insights.bullets} />}
 
@@ -189,7 +173,7 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
             />
 
             {/* Conversion Rate Comparison Chart */}
-            <VariantComparisonChart data={variantComparison} tooltipStyles={tooltipStyles} />
+            <VariantComparisonChart data={variantComparison} />
 
             {/* CUPED Impact Analysis Graphs */}
             {useCuped && cuped_adjusted_results && (
@@ -212,11 +196,6 @@ export const StatisticalDashboard: React.FC<StatisticalDashboardProps> = ({
             <EventIngestionCard experiment={experiment} />
 
             {/* Hypothesis Summary */}
-            <HypothesisSummary
-                hypothesis={experiment.hypothesis}
-                formatNumber={formatNumber}
-                formatPercent={formatPercent}
-            />
         </div>
     );
 };

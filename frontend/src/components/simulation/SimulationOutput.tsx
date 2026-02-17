@@ -1,14 +1,6 @@
 import React from 'react';
-import {
-    LineChart,
-    Line,
-    XAxis,
-    YAxis,
-    Tooltip,
-    ResponsiveContainer,
-    CartesianGrid,
-} from 'recharts';
-import type { FlowNode } from './types';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { MetricsTable } from './MetricsTable';
 
 type Variant = { name: string };
 type Experiment = { id: string; status: string; variants: Variant[]; primary_metric?: string | null };
@@ -38,9 +30,15 @@ type SimulationOutputProps = {
     applyPickerValue: (value: Date) => void;
     selectedExperiment: Experiment | null;
     connectedGroups: Group[];
-    hypothesisNodes: FlowNode[];
-    metricNodesForCharts: FlowNode[];
-    aggregatedSeries: Array<{ time: string; ts: number; [key: string]: string | number }>;
+    metricsSummary: Array<{
+        id: string;
+        label: string;
+        baseline: { rate: number; assign: number; conv: number };
+        variation: { rate: number; assign: number; conv: number };
+        lift: number;
+        chanceToWin: number;
+        pValue: number;
+    }>;
     isSimulating: boolean;
     isPaused: boolean;
     flowConnected: boolean;
@@ -72,9 +70,7 @@ export const SimulationOutput: React.FC<SimulationOutputProps> = ({
     applyPickerValue,
     selectedExperiment,
     connectedGroups,
-    hypothesisNodes,
-    metricNodesForCharts,
-    aggregatedSeries,
+    metricsSummary,
     isSimulating,
     isPaused,
     flowConnected,
@@ -281,95 +277,10 @@ export const SimulationOutput: React.FC<SimulationOutputProps> = ({
                             </div>
                         ))}
                     </div>
-                    {(hypothesisNodes.length > 0 || metricNodesForCharts.length > 0) &&
-                        isFlowReady &&
-                        (isSimulating || isPaused) && (
-                        <div>
-                            <div className="mb-3 text-[0.65rem] font-semibold text-slate-500">
-                                Hypotheses & Metrics
-                            </div>
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                                {hypothesisNodes.map((node) => (
-                                    <div
-                                        key={`hypothesis-${node.id}`}
-                                        className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
-                                    >
-                                        <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
-                                            {node.data?.hypothesis || node.label}
-                                        </div>
-                                        <div className="h-40">
-                                            <ResponsiveContainer width="100%" height="100%">
-                                                <LineChart data={aggregatedSeries}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                    <Tooltip
-                                                        contentStyle={{
-                                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                            border: '1px solid rgba(148, 163, 184, 0.2)',
-                                                            borderRadius: '12px',
-                                                            color: '#e2e8f0',
-                                                            fontSize: '11px',
-                                                        }}
-                                                    />
-                                                    {selectedExperiment?.variants?.map((variant, variantIdx) => (
-                                                        <Line
-                                                            key={`${node.id}-${variant.name}`}
-                                                            type="monotone"
-                                                            dataKey={variant.name}
-                                                            stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
-                                                            strokeWidth={2}
-                                                            name={variant.name}
-                                                            dot={false}
-                                                        />
-                                                    )) ||
-                                                        null}
-                                                </LineChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    </div>
-                                ))}
-                                {metricNodesForCharts.map((node) => (
-                                    <div
-                                        key={`metric-${node.id}`}
-                                        className="flow-surface rounded-xl border border-slate-800/70 bg-slate-950/70 p-3"
-                                    >
-                                        <div className="mb-2 text-[0.65rem] font-semibold text-slate-400">
-                                            {node.data?.metric || node.label}
-                                        </div>
-                                        <div className="h-40">
-                                            <ResponsiveContainer width="100%" height="100%">
-                                                <LineChart data={aggregatedSeries}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                                                    <XAxis dataKey="time" stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                    <YAxis stroke="#94a3b8" tick={{ fontSize: 10 }} />
-                                                    <Tooltip
-                                                        contentStyle={{
-                                                            backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                                                            border: '1px solid rgba(148, 163, 184, 0.2)',
-                                                            borderRadius: '12px',
-                                                            color: '#e2e8f0',
-                                                            fontSize: '11px',
-                                                        }}
-                                                    />
-                                                    {selectedExperiment?.variants?.map((variant, variantIdx) => (
-                                                        <Line
-                                                            key={`${node.id}-${variant.name}`}
-                                                            type="monotone"
-                                                            dataKey={variant.name}
-                                                            stroke={variantIdx % 2 === 0 ? '#38bdf8' : '#34d399'}
-                                                            strokeWidth={2}
-                                                            name={variant.name}
-                                                            dot={false}
-                                                        />
-                                                    )) ||
-                                                        null}
-                                                </LineChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                    {isFlowReady && (isSimulating || isPaused) && metricsSummary.length > 0 && (
+                        <div className="space-y-3">
+                            <div className="text-[0.65rem] font-semibold text-slate-500">Metrics (live)</div>
+                            <MetricsTable rows={metricsSummary} />
                         </div>
                     )}
                 </div>

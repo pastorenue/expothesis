@@ -15,7 +15,7 @@ impl ExperimentService {
         Self { db }
     }
 
-    pub async fn create_experiment(&self, req: CreateExperimentRequest) -> Result<Experiment> {
+    pub async fn create_experiment(&self, req: CreateExperimentRequest, org_id: Uuid) -> Result<Experiment> {
         info!("Creating experiment: {}", req.name);
 
         let experiment_type = req.experiment_type.unwrap_or(ExperimentType::AbTest);
@@ -69,6 +69,7 @@ impl ExperimentService {
         hypothesis.minimum_sample_size = Some(required_sample);
 
         let experiment = Experiment {
+            org_id,
             id: Uuid::new_v4(),
             name: req.name,
             description: req.description,
@@ -96,10 +97,10 @@ impl ExperimentService {
         Ok(experiment)
     }
 
-    pub async fn start_experiment(&self, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn start_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
         info!("Starting experiment: {}", experiment_id);
 
-        let mut experiment = self.get_experiment(experiment_id).await.map_err(|e| {
+        let mut experiment = self.get_experiment(org_id, experiment_id).await.map_err(|e| {
             log::error!("Failed to get experiment {}: {:?}", experiment_id, e);
             e
         })?;
@@ -132,10 +133,10 @@ impl ExperimentService {
         Ok(experiment)
     }
 
-    pub async fn pause_experiment(&self, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn pause_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
         info!("Pausing experiment: {}", experiment_id);
 
-        let mut experiment = self.get_experiment(experiment_id).await?;
+        let mut experiment = self.get_experiment(org_id, experiment_id).await?;
 
         if !matches!(experiment.status, ExperimentStatus::Running) {
             return Err(anyhow!("Can only pause running experiments"));
@@ -149,10 +150,10 @@ impl ExperimentService {
         Ok(experiment)
     }
 
-    pub async fn stop_experiment(&self, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn stop_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
         info!("Stopping experiment: {}", experiment_id);
 
-        let mut experiment = self.get_experiment(experiment_id).await?;
+        let mut experiment = self.get_experiment(org_id, experiment_id).await?;
 
         if matches!(experiment.status, ExperimentStatus::Stopped) {
             return Err(anyhow!("Experiment already stopped"));
@@ -167,12 +168,13 @@ impl ExperimentService {
         Ok(experiment)
     }
 
-    pub async fn get_experiment(&self, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn get_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
         let row = self
             .db
             .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE id = ?")
+            .query("SELECT ?fields FROM experiments FINAL WHERE id = ? AND org_id = ?")
             .bind(experiment_id.to_string())
+            .bind(org_id.to_string())
             .fetch_one::<ExperimentRow>()
             .await
             .map_err(|e| {
@@ -188,11 +190,12 @@ impl ExperimentService {
         self.row_to_experiment(row)
     }
 
-    pub async fn list_experiments(&self) -> Result<Vec<Experiment>> {
+    pub async fn list_experiments(&self, org_id: Uuid) -> Result<Vec<Experiment>> {
         let rows = self
             .db
             .client()
-            .query("SELECT ?fields FROM experiments FINAL ORDER BY updated_at DESC")
+            .query("SELECT ?fields FROM experiments FINAL WHERE org_id = ? ORDER BY updated_at DESC")
+            .bind(org_id.to_string())
             .fetch_all::<ExperimentRow>()
             .await
             .context("Failed to fetch experiments")?;
@@ -207,14 +210,17 @@ impl ExperimentService {
 
     pub async fn analyze_experiment(
         &self,
+        org_id: Uuid,
         experiment_id: Uuid,
     ) -> Result<ExperimentAnalysisResponse> {
         info!("Analyzing experiment: {}", experiment_id);
 
-        let experiment = self.get_experiment(experiment_id).await?;
+        let experiment = self.get_experiment(org_id, experiment_id).await?;
 
         // Get metric data for all variants
-        let variant_data = self.get_variant_metrics(experiment_id).await?;
+        let variant_data = self
+            .get_variant_metrics(org_id, experiment_id)
+            .await?;
 
         let mut results = Vec::new();
         let mut sample_sizes = Vec::new();
@@ -342,6 +348,7 @@ impl ExperimentService {
         });
 
         let row = ExperimentRow {
+            org_id: experiment.org_id.to_string(),
             id: experiment.id.to_string(),
             name: experiment.name.clone(),
             description: experiment.description.clone(),
@@ -378,6 +385,7 @@ impl ExperimentService {
 
     async fn get_variant_metrics(
         &self,
+        org_id: Uuid,
         experiment_id: Uuid,
     ) -> Result<std::collections::HashMap<String, VariantMetrics>> {
         info!(
@@ -393,7 +401,7 @@ impl ExperimentService {
                 toFloat64(0.0) as mean,
                 toFloat64(0.0) as std_dev
             FROM user_assignments FINAL
-            WHERE experiment_id = ?
+            WHERE experiment_id = ? AND org_id = ?
             GROUP BY variant
         ";
 
@@ -402,6 +410,7 @@ impl ExperimentService {
             .client()
             .query(assignments_query)
             .bind(experiment_id.to_string())
+            .bind(org_id.to_string())
             .fetch_all::<VariantMetricsRow>()
             .await
             .map_err(|e| {
@@ -419,7 +428,7 @@ impl ExperimentService {
                 toFloat64(avg(metric_value)) as mean,
                 toFloat64(stddevPop(metric_value)) as std_dev
             FROM metric_events
-            WHERE experiment_id = ?
+            WHERE experiment_id = ? AND org_id = ?
             GROUP BY variant
         ";
 
@@ -428,6 +437,7 @@ impl ExperimentService {
             .client()
             .query(events_query)
             .bind(experiment_id.to_string())
+            .bind(org_id.to_string())
             .fetch_all::<VariantMetricsRow>()
             .await
             .context("Failed to fetch event metrics from ClickHouse")?;
@@ -463,7 +473,7 @@ impl ExperimentService {
         }
 
         // Add variants with zero data if they are missing from query results
-        let experiment = self.get_experiment(experiment_id).await?;
+        let experiment = self.get_experiment(org_id, experiment_id).await?;
         for variant in experiment.variants {
             map.entry(variant.name.clone()).or_insert(VariantMetrics {
                 total: 0,
@@ -526,6 +536,7 @@ impl ExperimentService {
         });
 
         Ok(Experiment {
+            org_id: Uuid::parse_str(&row.org_id).context("Invalid org id")?,
             id: Uuid::parse_str(&row.id)?,
             name: row.name,
             description: row.description,

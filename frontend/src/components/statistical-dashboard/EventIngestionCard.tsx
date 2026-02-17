@@ -1,12 +1,15 @@
 import React from 'react';
 import { eventApi } from '../../services/api';
 import type { ExperimentAnalysis } from '../../types';
+import { useQueryClient } from '@tanstack/react-query';
 
 type EventIngestionCardProps = {
     experiment: ExperimentAnalysis['experiment'];
 };
 
 export const EventIngestionCard: React.FC<EventIngestionCardProps> = ({ experiment }) => {
+    const queryClient = useQueryClient();
+
     return (
         <div className="card border-dashed border-2 border-slate-800/70 bg-slate-950/60">
             <h3 className="mb-4 text-slate-200">Test Event Ingestion</h3>
@@ -48,8 +51,22 @@ export const EventIngestionCard: React.FC<EventIngestionCardProps> = ({ experime
                                 metric_name: experiment.primary_metric,
                                 metric_value: value,
                             });
+                            // Refresh analysis so graphs reflect the new event
+                            queryClient.invalidateQueries({
+                                predicate: (q) =>
+                                    Array.isArray(q.queryKey) &&
+                                    q.queryKey[0] === 'analysis' &&
+                                    q.queryKey.includes(experiment.id),
+                            });
+                            queryClient.invalidateQueries({
+                                predicate: (q) =>
+                                    Array.isArray(q.queryKey) &&
+                                    q.queryKey[0] === 'experiment' &&
+                                    q.queryKey.includes(experiment.id),
+                            });
                         } catch (e) {
                             console.error('Failed to ingest event', e);
+                            alert('Failed to ingest event. Check console for details.');
                         }
                     }}
                     className="btn-primary w-full"

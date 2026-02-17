@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
 pub struct ExperimentRow {
+    pub org_id: String,
     pub id: String,
     pub name: String,
     pub description: String,

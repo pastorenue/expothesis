@@ -17,10 +17,11 @@ impl UserGroupService {
         Self { db }
     }
 
-    pub async fn create_user_group(&self, req: CreateUserGroupRequest) -> Result<UserGroup> {
+    pub async fn create_user_group(&self, req: CreateUserGroupRequest, org_id: Uuid) -> Result<UserGroup> {
         info!("Creating user group: {}", req.name);
 
         let group = UserGroup {
+            org_id,
             id: Uuid::new_v4(),
             name: req.name,
             description: req.description,
@@ -35,17 +36,19 @@ impl UserGroupService {
         Ok(group)
     }
 
-    pub async fn get_user_group(&self, group_id: Uuid) -> Result<UserGroup> {
+    pub async fn get_user_group(&self, org_id: Uuid, group_id: Uuid) -> Result<UserGroup> {
         let row = self
             .db
             .client()
-            .query("SELECT ?fields FROM user_groups FINAL WHERE id = ?")
+            .query("SELECT ?fields FROM user_groups FINAL WHERE id = ? AND org_id = ?")
             .bind(group_id.to_string())
+            .bind(org_id.to_string())
             .fetch_one::<UserGroupRow>()
             .await
             .context("Failed to fetch user group")?;
 
         Ok(UserGroup {
+            org_id,
             id: Uuid::parse_str(&row.id)?,
             name: row.name,
             description: row.description,
@@ -56,11 +59,12 @@ impl UserGroupService {
         })
     }
 
-    pub async fn list_user_groups(&self) -> Result<Vec<UserGroup>> {
+    pub async fn list_user_groups(&self, org_id: Uuid) -> Result<Vec<UserGroup>> {
         let rows = self
             .db
             .client()
-            .query("SELECT ?fields FROM user_groups FINAL ORDER BY updated_at DESC")
+            .query("SELECT ?fields FROM user_groups FINAL WHERE org_id = ? ORDER BY updated_at DESC")
+            .bind(org_id.to_string())
             .fetch_all::<UserGroupRow>()
             .await
             .context("Failed to fetch user groups")?;
@@ -68,6 +72,7 @@ impl UserGroupService {
         let mut groups = Vec::new();
         for row in rows {
             groups.push(UserGroup {
+                org_id: Uuid::parse_str(&row.org_id)?,
                 id: Uuid::parse_str(&row.id)?,
                 name: row.name,
                 description: row.description,
@@ -83,10 +88,11 @@ impl UserGroupService {
 
     pub async fn update_user_group(
         &self,
+        org_id: Uuid,
         group_id: Uuid,
         req: UpdateUserGroupRequest,
     ) -> Result<UserGroup> {
-        let mut group = self.get_user_group(group_id).await?;
+        let mut group = self.get_user_group(org_id, group_id).await?;
 
         if let Some(name) = req.name {
             group.name = name;
@@ -103,11 +109,12 @@ impl UserGroupService {
         Ok(group)
     }
 
-    pub async fn delete_user_group(&self, group_id: Uuid) -> Result<()> {
+    pub async fn delete_user_group(&self, org_id: Uuid, group_id: Uuid) -> Result<()> {
         self.db
             .client()
-            .query("ALTER TABLE user_groups DELETE WHERE id = ?")
+            .query("ALTER TABLE user_groups DELETE WHERE id = ? AND org_id = ?")
             .bind(group_id.to_string())
+            .bind(org_id.to_string())
             .execute()
             .await
             .context("Failed to delete user group")?;
@@ -117,6 +124,7 @@ impl UserGroupService {
 
     pub async fn assign_user_to_variant(
         &self,
+        org_id: Uuid,
         user_id: &str,
         experiment_id: Uuid,
         group_id: Uuid,
@@ -137,6 +145,7 @@ impl UserGroupService {
         );
 
         let assignment = UserAssignment {
+            org_id,
             user_id: user_id.to_string(),
             experiment_id,
             variant: variant_name,
@@ -144,20 +153,23 @@ impl UserGroupService {
             assigned_at: Utc::now(),
         };
 
-        self.save_assignment(&assignment).await?;
+        self.save_assignment(org_id, &assignment).await?;
 
         Ok(assignment)
     }
 
     pub async fn assign_user_auto(
         &self,
+        org_id: Uuid,
         user_id: &str,
         experiment_id: Uuid,
         group_id: Uuid,
         attributes: Option<serde_json::Value>,
     ) -> Result<UserAssignment> {
-        let experiment = self.get_experiment_variants_full(experiment_id).await?;
-        let group = self.get_user_group(group_id).await?;
+        let experiment = self
+            .get_experiment_variants_full(org_id, experiment_id)
+            .await?;
+        let group = self.get_user_group(org_id, group_id).await?;
 
         // Evaluate targeting rule if present
         if !group.assignment_rule.is_empty()
@@ -175,6 +187,7 @@ impl UserGroupService {
         }
 
         self.assign_user_to_variant(
+            org_id,
             user_id,
             experiment_id,
             group_id,
@@ -186,12 +199,17 @@ impl UserGroupService {
         .await
     }
 
-    async fn get_experiment_variants_full(&self, experiment_id: Uuid) -> Result<Experiment> {
+    async fn get_experiment_variants_full(
+        &self,
+        org_id: Uuid,
+        experiment_id: Uuid,
+    ) -> Result<Experiment> {
         let row = self
             .db
             .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE id = ?")
+            .query("SELECT ?fields FROM experiments FINAL WHERE id = ? AND org_id = ?")
             .bind(experiment_id.to_string())
+            .bind(org_id.to_string())
             .fetch_one::<ExperimentRow>()
             .await
             .context("Failed to fetch experiment for variants")?;
@@ -207,6 +225,7 @@ impl UserGroupService {
         };
 
         Ok(Experiment {
+            org_id: Uuid::parse_str(&row.org_id)?,
             id: Uuid::parse_str(&row.id)?,
             name: row.name,
             description: row.description,
@@ -235,6 +254,7 @@ impl UserGroupService {
 
     pub async fn move_user_group(
         &self,
+        org_id: Uuid,
         group_id: Uuid,
         from_experiment_id: Uuid,
         to_experiment_id: Uuid,
@@ -248,12 +268,17 @@ impl UserGroupService {
         let user_ids = self.get_group_user_ids(group_id).await?;
 
         // Get variants for target experiment
-        let to_variants = self.get_experiment_variants(to_experiment_id).await?;
+        let to_variants = self
+            .get_experiment_variants(org_id, to_experiment_id)
+            .await?;
 
         // Reassign all users
         for user_id in user_ids {
-            let experiment = self.get_experiment_variants_full(to_experiment_id).await?;
+            let experiment = self
+                .get_experiment_variants_full(org_id, to_experiment_id)
+                .await?;
             self.assign_user_to_variant(
+                org_id,
                 &user_id,
                 to_experiment_id,
                 group_id,
@@ -268,8 +293,8 @@ impl UserGroupService {
         Ok(())
     }
 
-    pub async fn get_group_metrics(&self, group_id: Uuid) -> Result<GroupMetrics> {
-        let group = self.get_user_group(group_id).await?;
+    pub async fn get_group_metrics(&self, org_id: Uuid, group_id: Uuid) -> Result<GroupMetrics> {
+        let group = self.get_user_group(org_id, group_id).await?;
 
         // Mock metrics for now
         Ok(GroupMetrics {
@@ -365,6 +390,7 @@ impl UserGroupService {
 
     async fn save_user_group(&self, group: &UserGroup) -> Result<()> {
         let row = UserGroupRow {
+            org_id: group.org_id.to_string(),
             id: group.id.to_string(),
             name: group.name.clone(),
             description: group.description.clone(),
@@ -381,13 +407,14 @@ impl UserGroupService {
         Ok(())
     }
 
-    async fn save_assignment(&self, assignment: &UserAssignment) -> Result<()> {
+    async fn save_assignment(&self, org_id: Uuid, assignment: &UserAssignment) -> Result<()> {
         info!(
             "Saving user assignment: user={} experiment={} variant={}",
             assignment.user_id, assignment.experiment_id, assignment.variant
         );
 
         let row = UserAssignmentRow {
+            org_id: org_id.to_string(),
             user_id: assignment.user_id.clone(),
             experiment_id: assignment.experiment_id.to_string(),
             variant: assignment.variant.clone(),
@@ -403,17 +430,17 @@ impl UserGroupService {
     }
 
     async fn get_group_user_ids(&self, _group_id: Uuid) -> Result<Vec<String>> {
-        // Query user_assignments for this group
-        // SELECT user_id FROM user_assignments WHERE group_id = ?
+        // TODO: implement if needed; placeholder keeps signature unchanged
         Ok(vec![])
     }
 
-    async fn get_experiment_variants(&self, experiment_id: Uuid) -> Result<Vec<Variant>> {
+    async fn get_experiment_variants(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Vec<Variant>> {
         let row = self
             .db
             .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE id = ?")
+            .query("SELECT ?fields FROM experiments FINAL WHERE id = ? AND org_id = ?")
             .bind(experiment_id.to_string())
+            .bind(org_id.to_string())
             .fetch_one::<ExperimentRow>()
             .await
             .context("Failed to fetch experiment for variants")?;
