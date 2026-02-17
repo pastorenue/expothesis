@@ -580,7 +580,6 @@ function LandingPage() {
 function Layout({ children }: { children: React.ReactNode }) {
     const location = useLocation();
     const navigate = useNavigate();
-    const queryClient = useQueryClient();
     const [isSidebarOpen, setIsSidebarOpen] = React.useState(false);
     const [isRailCollapsed, setIsRailCollapsed] = React.useState(false);
     const [theme, setTheme] = React.useState<'dark' | 'light'>('dark');
@@ -615,11 +614,6 @@ function Layout({ children }: { children: React.ReactNode }) {
         }
     }, [activeOrgId, orgs]);
 
-    const handleOrgChange = (orgId: string) => {
-        setActiveOrgId(orgId);
-        window.localStorage.setItem('expothesis-org-id', orgId);
-        queryClient.invalidateQueries();
-    };
     const navItems = [
         {
             to: '/home',
