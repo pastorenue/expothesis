@@ -20,6 +20,7 @@ import { StatisticalHeader } from './components/statistical-dashboard/Statistica
 import { CupedConfigurationModal } from './components/CupedConfigurationModal';
 import { Account, CreateExperimentRequest, Experiment } from './types';
 import { AccountProvider, useAccount } from './contexts/AccountContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ExpothesisTracker } from './sdk/expothesis';
 import { AccountSetupWizard } from './components/onboarding/AccountSetupWizard';
 
@@ -594,18 +595,21 @@ function Layout({ children }: { children: React.ReactNode }) {
     const idleWarningTimeoutRef = React.useRef<number | null>(null);
     const idleLogoutTimeoutRef = React.useRef<number | null>(null);
     const idleCountdownRef = React.useRef<number | null>(null);
-    const userId = React.useMemo(() => window.localStorage.getItem('expothesis-user-id') ?? '', []);
+
+    const { token: authToken, userId, logout } = useAuth();
+    const { activeAccountId, setActiveAccountId } = useAccount();
+
     const { data: userProfile } = useQuery({
         queryKey: ['me', userId],
-        queryFn: async () => (await authApi.me(userId)).data,
-        enabled: !!userId,
-    });
-    const { data: accounts = [] } = useQuery({
-        queryKey: ['accounts'],
-        queryFn: async () => (await accountApi.list()).data,
+        queryFn: async () => (await authApi.me(userId!)).data,
+        enabled: !!userId && !!authToken,
     });
 
-    const { activeAccountId, setActiveAccountId } = useAccount();
+    const { data: accounts = [] } = useQuery({
+        queryKey: ['accounts', userId],
+        queryFn: async () => (await accountApi.list()).data,
+        enabled: !!authToken,
+    });
 
     React.useEffect(() => {
         if (accounts.length === 0) {
@@ -760,11 +764,10 @@ function Layout({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
-    const logout = React.useCallback(() => {
-        window.localStorage.removeItem('expothesis-token');
-        window.localStorage.removeItem('expothesis-user-id');
+    const handleLogout = React.useCallback(() => {
+        logout();
         navigate('/login', { replace: true });
-    }, [navigate]);
+    }, [logout, navigate]);
 
     const startIdleTimers = React.useCallback(() => {
         clearIdleTimers();
@@ -779,11 +782,10 @@ function Layout({ children }: { children: React.ReactNode }) {
             }, 1000);
         }, warnAfterMs);
         idleLogoutTimeoutRef.current = window.setTimeout(() => {
-            logout();
+            handleLogout();
         }, logoutAfterMs);
-    }, [clearIdleTimers, logout, logoutAfterMs, warnAfterMs]);
+    }, [clearIdleTimers, handleLogout, logoutAfterMs, warnAfterMs]);
 
-    const authToken = window.localStorage.getItem('expothesis-token');
     const isPublicRoute = ['/', '/login', '/register'].includes(location.pathname);
 
     React.useEffect(() => {
@@ -926,9 +928,8 @@ function Layout({ children }: { children: React.ReactNode }) {
                                 type="button"
                                 className="sidebar-link group relative"
                                 onClick={() => {
-                                    window.localStorage.removeItem('expothesis-token');
+                                    handleLogout();
                                     setIsSidebarOpen(false);
-                                    navigate('/login');
                                 }}
                                 aria-label="Log out"
                             >
@@ -1025,7 +1026,7 @@ function Layout({ children }: { children: React.ReactNode }) {
                         <button className="btn-secondary" onClick={startIdleTimers}>
                             Stay signed in
                         </button>
-                        <button className="btn-danger" onClick={logout}>
+                        <button className="btn-danger" onClick={handleLogout}>
                             Sign out now
                         </button>
                     </div>
@@ -1039,40 +1040,42 @@ function App() {
     return (
         <QueryClientProvider client={queryClient}>
             <BrowserRouter>
-                <AccountProvider>
-                    <Layout>
-                        <Routes>
-                            <Route path="/" element={<LandingPage />} />
-                            <Route path="/login" element={<LoginPage />} />
-                            <Route path="/register" element={<RegisterPage />} />
-                            <Route path="/home" element={<HomeOverview />} />
-                            <Route path="/setup" element={<AccountSetupWizard />} />
-                            <Route path="/dashboard" element={<HomePage />} />
-                            <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
-                            <Route path="/user-groups" element={<UserGroupManager />} />
-                            <Route path="/insights" element={<AnalyticsMonitoringDashboard />} />
-                            <Route path="/ai-assist" element={<AiAssistHub />} />
-                            <Route path="/simulation-studio" element={<SimulationStudio />} />
-                            <Route path="/feature-flags" element={<FeatureFlagManager />} />
-                            <Route path="/templates" element={<TemplatesPlan />} />
-                            <Route path="/settings" element={<UserSettings />} />
-                            <Route
-                                path="/sessions"
-                                element={
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h1>Session Replay</h1>
-                                            <p className="mt-1 text-slate-400">
-                                                Review session replays, heatmaps, and live activity.
-                                            </p>
+                <AuthProvider>
+                    <AccountProvider>
+                        <Layout>
+                            <Routes>
+                                <Route path="/" element={<LandingPage />} />
+                                <Route path="/login" element={<LoginPage />} />
+                                <Route path="/register" element={<RegisterPage />} />
+                                <Route path="/home" element={<HomeOverview />} />
+                                <Route path="/setup" element={<AccountSetupWizard />} />
+                                <Route path="/dashboard" element={<HomePage />} />
+                                <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
+                                <Route path="/user-groups" element={<UserGroupManager />} />
+                                <Route path="/insights" element={<AnalyticsMonitoringDashboard />} />
+                                <Route path="/ai-assist" element={<AiAssistHub />} />
+                                <Route path="/simulation-studio" element={<SimulationStudio />} />
+                                <Route path="/feature-flags" element={<FeatureFlagManager />} />
+                                <Route path="/templates" element={<TemplatesPlan />} />
+                                <Route path="/settings" element={<UserSettings />} />
+                                <Route
+                                    path="/sessions"
+                                    element={
+                                        <div className="space-y-6">
+                                            <div>
+                                                <h1>Session Replay</h1>
+                                                <p className="mt-1 text-slate-400">
+                                                    Review session replays, heatmaps, and live activity.
+                                                </p>
+                                            </div>
+                                            <SessionReplayPanel />
                                         </div>
-                                        <SessionReplayPanel />
-                                    </div>
-                                }
-                            />
-                        </Routes>
-                    </Layout>
-                </AccountProvider>
+                                    }
+                                />
+                            </Routes>
+                        </Layout>
+                    </AccountProvider>
+                </AuthProvider>
             </BrowserRouter>
         </QueryClientProvider>
     );

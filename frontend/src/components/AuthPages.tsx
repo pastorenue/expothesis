@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { authApi, inviteApi } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { InviteDetailsResponse } from '../types';
 
 const normalizeAuthError = (message: string) => {
@@ -31,6 +32,7 @@ export const LoginPage: React.FC = () => {
     const [totpEnabled, setTotpEnabled] = React.useState(false);
     const [step, setStep] = React.useState<'login' | 'otp'>('login');
     const [error, setError] = React.useState<string | null>(null);
+    const { login } = useAuth();
 
     const handleLogin = async () => {
         setError(null);
@@ -38,15 +40,13 @@ export const LoginPage: React.FC = () => {
             const res = await authApi.login({ email, password });
             setTotpEnabled(res.data.totp_enabled);
             if (res.data.token && res.data.user_id) {
-                window.localStorage.setItem('expothesis-token', res.data.token);
-                window.localStorage.setItem('expothesis-user-id', res.data.user_id);
+                login(res.data.token, res.data.user_id);
                 navigate('/home');
                 return;
             }
             if (!res.data.requires_otp) {
                 const tokenRes = await authApi.verifyOtp({ email, code: '' });
-                window.localStorage.setItem('expothesis-token', tokenRes.data.token);
-                window.localStorage.setItem('expothesis-user-id', tokenRes.data.user_id);
+                login(tokenRes.data.token, tokenRes.data.user_id);
                 navigate('/home');
                 return;
             }
@@ -60,8 +60,7 @@ export const LoginPage: React.FC = () => {
         setError(null);
         try {
             const res = await authApi.verifyOtp({ email, code: '', totp_code: totp || undefined });
-            window.localStorage.setItem('expothesis-token', res.data.token);
-            window.localStorage.setItem('expothesis-user-id', res.data.user_id);
+            login(res.data.token, res.data.user_id);
             navigate('/home');
         } catch (err: unknown) {
             setError(getAuthError(err, 'Verification failed'));
@@ -145,6 +144,7 @@ export const RegisterPage: React.FC = () => {
     const [password, setPassword] = React.useState('');
     const [error, setError] = React.useState<string | null>(null);
     const [inviteDetails, setInviteDetails] = React.useState<InviteDetailsResponse | null>(null);
+    const { login } = useAuth();
     const inviteToken = searchParams.get('token');
 
     React.useEffect(() => {
@@ -168,9 +168,7 @@ export const RegisterPage: React.FC = () => {
             });
 
             if (res.data.token && res.data.user_id) {
-                window.localStorage.setItem('expothesis-token', res.data.token);
-                window.localStorage.setItem('expothesis-user-id', res.data.user_id);
-
+                login(res.data.token, res.data.user_id);
                 if (inviteToken) {
                     navigate('/home');
                 } else {
@@ -180,8 +178,7 @@ export const RegisterPage: React.FC = () => {
             }
             if (!res.data.requires_otp) {
                 const tokenRes = await authApi.verifyOtp({ email, code: '' });
-                window.localStorage.setItem('expothesis-token', tokenRes.data.token);
-                window.localStorage.setItem('expothesis-user-id', tokenRes.data.user_id);
+                login(tokenRes.data.token, tokenRes.data.user_id);
                 if (inviteToken) {
                     navigate('/home');
                 } else {
