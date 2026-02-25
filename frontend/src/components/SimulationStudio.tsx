@@ -8,6 +8,7 @@ import { NodePalette } from './simulation/NodePalette';
 import { SimulationOutput } from './simulation/SimulationOutput';
 import { SimulationDetails } from './simulation/SimulationDetails';
 import type { FlowEdge, FlowNode } from './simulation/types';
+import { useAccount } from '../contexts/AccountContext';
 
 const nodeColorByKind: Record<FlowNode['kind'], { border: string; badge: string }> = {
     'trigger-start': { border: 'border-cyan-400/70', badge: 'bg-cyan-500/20 text-cyan-200 border-cyan-400/50' },
@@ -36,27 +37,30 @@ const normalCdf = (z: number) => {
 };
 
 export const SimulationStudio: React.FC = () => {
+    const { activeAccountId } = useAccount();
     const { data: experiments = [] } = useQuery({
-        queryKey: ['experiments'],
+        queryKey: ['experiments', activeAccountId],
         queryFn: async () => {
             const response = await experimentApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const { data: userGroups = [] } = useQuery({
-        queryKey: ['userGroups'],
+        queryKey: ['userGroups', activeAccountId],
         queryFn: async () => {
             const response = await userGroupApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const [isSimulating, setIsSimulating] = React.useState(false);
     const [isPaused, setIsPaused] = React.useState(false);
     const simulationRef = React.useRef<number | null>(null);
     const [simulationSeries, setSimulationSeries] = React.useState<
-        { time: string; ts: number; [key: string]: string | number }[]
+        { time: string; ts: number;[key: string]: string | number }[]
     >([]);
     const eventCounter = React.useRef<Record<string, number>>({});
     const variantCounter = React.useRef<Record<string, number>>({});
@@ -111,12 +115,12 @@ export const SimulationStudio: React.FC = () => {
     const selectedGroups = userGroups.filter((group) => selectedGroupIds.includes(group.id));
 
     const { data: analysis } = useQuery({
-        queryKey: ['analysis', selectedExperiment?.id],
+        queryKey: ['analysis', selectedExperiment?.id, activeAccountId],
         queryFn: async () => {
             const response = await experimentApi.getAnalysis(selectedExperiment!.id);
             return response.data as ExperimentAnalysis;
         },
-        enabled: !!selectedExperiment && selectedExperiment?.status === 'running',
+        enabled: !!selectedExperiment && selectedExperiment?.status === 'running' && !!activeAccountId,
         refetchInterval: 5000,
     });
 
@@ -224,9 +228,8 @@ export const SimulationStudio: React.FC = () => {
                     return (
                         <button
                             key={`day-${item.day}`}
-                            className={`h-7 rounded-md text-xs font-semibold ${
-                                isActive ? 'bg-emerald-500/30 text-emerald-100' : 'hover:bg-slate-800/80'
-                            }`}
+                            className={`h-7 rounded-md text-xs font-semibold ${isActive ? 'bg-emerald-500/30 text-emerald-100' : 'hover:bg-slate-800/80'
+                                }`}
                             onClick={() => {
                                 const next = new Date(pickerValue);
                                 next.setFullYear(year, month, item.day);
@@ -291,10 +294,10 @@ export const SimulationStudio: React.FC = () => {
                 prev.map((node) =>
                     node.id === draggingRef.current?.id
                         ? {
-                              ...node,
-                              x: Math.max(minX, Math.min(nextX, maxX)),
-                              y: Math.max(minY, Math.min(nextY, maxY)),
-                          }
+                            ...node,
+                            x: Math.max(minX, Math.min(nextX, maxX)),
+                            y: Math.max(minY, Math.min(nextY, maxY)),
+                        }
                         : node
                 )
             );
@@ -835,7 +838,7 @@ export const SimulationStudio: React.FC = () => {
 
                     setSimulationSeries((prev) => {
                         const last = prev[prev.length - 1] || {};
-                        const nextPoint: { time: string; ts: number; [key: string]: string | number } = {
+                        const nextPoint: { time: string; ts: number;[key: string]: string | number } = {
                             time: timeLabel,
                             ts: now.getTime(),
                         };
@@ -1025,344 +1028,340 @@ export const SimulationStudio: React.FC = () => {
                             />
 
                             <div>
-                        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
-                            <span>Drag nodes. Drag from right handles to connect. Click line to remove.</span>
-                            <div className="flex items-center gap-2">
-                                <button className="btn-secondary" onClick={autoLayout}>
-                                    Auto Layout
-                                </button>
-                                <button className="btn-secondary" onClick={clearCanvas}>
-                                    Clear Canvas
-                                </button>
-                                <span className={isFlowReady ? 'text-emerald-300' : 'text-amber-300'}>
-                                    {isFlowReady ? 'Simulation Ready' : 'Connect required inputs'}
-                                </span>
-                            </div>
-                        </div>
-                        <div
-                            ref={canvasRef}
-                            onWheel={(event) => {
-                                if (!event.ctrlKey && !event.metaKey) return;
-                                event.preventDefault();
-                                const direction = event.deltaY > 0 ? -0.1 : 0.1;
-                                adjustZoom(zoomRef.current + direction);
-                            }}
-                            onMouseDown={(event) => {
-                                if (event.button !== 0 || pendingFrom) return;
-                                const target = event.target as HTMLElement;
-                                if (target.closest('.flow-node') || target.closest('button') || target.closest('input')) {
-                                    return;
-                                }
-                                event.preventDefault();
-                                panningRef.current = {
-                                    startX: event.clientX,
-                                    startY: event.clientY,
-                                    panX: panRef.current.x,
-                                    panY: panRef.current.y,
-                                };
-                            }}
-                            onMouseMove={(event) => {
-                                if (!canvasRef.current || !pendingFrom) return;
-                                const rect = canvasRef.current.getBoundingClientRect();
-                                const next = {
-                                    x: (event.clientX - rect.left - panRef.current.x) / zoomRef.current,
-                                    y: (event.clientY - rect.top - panRef.current.y) / zoomRef.current,
-                                };
-                                const target = nodes
-                                    .filter((node) => node.id !== pendingFrom)
-                                    .map((node) => {
-                                        const handleX = node.x - HANDLE_CENTER_OFFSET;
-                                        const handleY = node.y + NODE_HEIGHT / 2;
-                                        const dx = next.x - handleX;
-                                        const dy = next.y - handleY;
-                                        return { node, distance: Math.hypot(dx, dy), handleX, handleY };
-                                    })
-                                    .sort((a, b) => a.distance - b.distance)[0];
-
-                                if (target && target.distance < 20 && isValidConnection(pendingFrom, target.node.id)) {
-                                    setHoverTarget(target.node.id);
-                                    setCursor({ x: target.handleX, y: target.handleY });
-                                } else {
-                                    setHoverTarget(null);
-                                    setCursor(next);
-                                }
-                            }}
-                            onClick={() => {
-                                if (pendingFrom) {
-                                    reconnectRef.current = null;
-                                    setPendingFrom(null);
-                                    setHoverTarget(null);
-                                    setCursor(null);
-                                    return;
-                                }
-                                setSelectedNodeId(null);
-                            }}
-                            className="flow-canvas relative mt-4 min-h-[520px] overflow-hidden rounded-2xl border border-slate-800/70 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.5),rgba(2,6,23,0.9))] p-6"
-                        >
-                            <div className="absolute right-6 top-6 z-20 flex items-center gap-3 rounded-full border border-slate-700/60 bg-slate-950/80 px-4 py-2 text-xs text-slate-200 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.7)]">
-                                <span className="text-[0.5rem] uppercase tracking-[0.3em] text-slate-400">Zoom</span>
-                                <input
-                                    type="range"
-                                    min={0.6}
-                                    max={1.6}
-                                    step={0.05}
-                                    value={zoom}
-                                    onChange={(event) => adjustZoom(Number(event.target.value))}
-                                    className="h-1 w-24 accent-emerald-300"
-                                />
-                                <span className="min-w-[2.5rem] text-center text-emerald-200">
-                                    {Math.round(zoom * 100)}%
-                                </span>
-                            </div>
-                            <div
-                                className="absolute inset-0 origin-top-left overflow-visible"
-                                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
-                            >
-                                <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px]"></div>
-
-                                <svg className="absolute inset-0 h-full w-full pointer-events-none overflow-visible">
-                                {edges.map((edge) => {
-                                    const fromNode = nodes.find((node) => node.id === edge.from);
-                                    const toNode = nodes.find((node) => node.id === edge.to);
-                                    if (!fromNode || !toNode) return null;
-                                    const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
-                                    const startY = fromNode.y + NODE_HEIGHT / 2;
-                                    const endX = toNode.x - HANDLE_CENTER_OFFSET;
-                                    const endY = toNode.y + NODE_HEIGHT / 2;
-                                    const midX = (startX + endX) / 2;
-                                    const isActiveEdge =
-                                        isSimulating &&
-                                        reachableToRun.has(edge.from) &&
-                                        reachableToRun.has(edge.to) &&
-                                        (!startNode || (reachableFromStart.has(edge.from) && reachableFromStart.has(edge.to)));
-                                    return (
-                                        <path
-                                            key={`${edge.from}-${edge.to}`}
-                                            d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
-                                            stroke="rgba(16,185,129,0.6)"
-                                            strokeWidth="1.5"
-                                            vectorEffect="non-scaling-stroke"
-                                            fill="none"
-                                            className={isActiveEdge ? 'flow-line' : ''}
-                                        />
-                                    );
-                                })}
-                                {pendingFrom && cursor ? (
-                                    (() => {
-                                        const fromNode = nodes.find((node) => node.id === pendingFrom);
-                                        if (!fromNode) return null;
-                                        const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
-                                        const startY = fromNode.y + NODE_HEIGHT / 2;
-                                        const midX = (startX + cursor.x) / 2;
-                                        return (
-                                            <path
-                                                d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${cursor.y}, ${cursor.x} ${cursor.y}`}
-                                                stroke="rgba(56,189,248,0.6)"
-                                                strokeWidth="1.5"
-                                                vectorEffect="non-scaling-stroke"
-                                                fill="none"
-                                                strokeDasharray="6 6"
-                                            />
-                                        );
-                                    })()
-                                ) : null}
-                                </svg>
-                                <svg className="absolute inset-0 h-full w-full overflow-visible">
-                                {edges.map((edge) => {
-                                    const fromNode = nodes.find((node) => node.id === edge.from);
-                                    const toNode = nodes.find((node) => node.id === edge.to);
-                                    if (!fromNode || !toNode) return null;
-                                    const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
-                                    const startY = fromNode.y + NODE_HEIGHT / 2;
-                                    const endX = toNode.x - HANDLE_CENTER_OFFSET;
-                                    const endY = toNode.y + NODE_HEIGHT / 2;
-                                    const midX = (startX + endX) / 2;
-                                    return (
-                                        <path
-                                            key={`hit-${edge.from}-${edge.to}`}
-                                            d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
-                                            stroke="transparent"
-                                            strokeWidth="12"
-                                            vectorEffect="non-scaling-stroke"
-                                            fill="none"
-                                            className="cursor-pointer"
-                                            onMouseDown={(event) => {
-                                                event.stopPropagation();
-                                                if (!canvasRef.current) return;
-                                                const rect = canvasRef.current.getBoundingClientRect();
-                                                const next = {
-                                                    x: (event.clientX - rect.left - panRef.current.x) / zoomRef.current,
-                                                    y: (event.clientY - rect.top - panRef.current.y) / zoomRef.current,
-                                                };
-                                                reconnectRef.current = edge;
-                                                setEdges((prev) => prev.filter((item) => !(item.from === edge.from && item.to === edge.to)));
-                                                setPendingFrom(edge.from);
-                                                setCursor(next);
-                                            }}
-                                            onDoubleClick={() => {
-                                                setEdges((prev) => prev.filter((item) => !(item.from === edge.from && item.to === edge.to)));
-                                            }}
-                                        />
-                                    );
-                                })}
-                                </svg>
-
-                                {nodes.map((node) => {
-                                    const incoming = hasIncoming(node.id);
-                                    const outgoing = hasOutgoing(node.id);
-                                    const canOutput = node.kind !== 'trigger-run';
-                                    const canInput = node.kind !== 'trigger-start';
-                                    const isRunNode = node.kind === 'trigger-run';
-                                    return (
-                                <div
-                                    key={node.id}
-                                    className={`flow-node absolute h-[72px] w-44 cursor-grab select-none rounded-2xl border bg-slate-900/80 px-4 py-3 text-sm font-semibold text-slate-200 shadow-[0_20px_30px_-25px_rgba(15,23,42,0.9)] ${nodeColorByKind[node.kind].border}`}
-                                    style={{ left: node.x, top: node.y }}
-                                    onMouseDown={(event) => startDrag(event, node.id)}
-                                    onClick={(event) => {
-                                        event.stopPropagation();
-                                        setSelectedNodeId(node.id);
-                                    }}
-                                >
-                                    <div className="flex items-center justify-between gap-3">
-                                        <span className="truncate">{node.label}</span>
-                                        <button
-                                            className="absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/70 bg-slate-950 text-slate-400 hover:text-rose-400"
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                removeNode(node.id);
-                                            }}
-                                            aria-label="Remove node"
-                                        >
-                                            ×
+                                <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+                                    <span>Drag nodes. Drag from right handles to connect. Click line to remove.</span>
+                                    <div className="flex items-center gap-2">
+                                        <button className="btn-secondary" onClick={autoLayout}>
+                                            Auto Layout
                                         </button>
+                                        <button className="btn-secondary" onClick={clearCanvas}>
+                                            Clear Canvas
+                                        </button>
+                                        <span className={isFlowReady ? 'text-emerald-300' : 'text-amber-300'}>
+                                            {isFlowReady ? 'Simulation Ready' : 'Connect required inputs'}
+                                        </span>
                                     </div>
-                                    {isRunNode && (
-                                        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1">
-                                            <div
-                                                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[0.6rem] ${
-                                                    isSimulating
-                                                        ? 'border-emerald-400/60 text-emerald-200 run-pulse'
-                                                        : isPaused
-                                                        ? 'border-amber-400/60 text-amber-200'
-                                                        : 'border-slate-700/70 text-slate-400'
-                                                }`}
-                                                aria-label={isSimulating ? 'Simulation running' : isPaused ? 'Simulation paused' : 'Simulation idle'}
-                                            >
-                                                ●
-                                            </div>
-                                            <button
-                                                className={`flex h-6 w-6 items-center justify-center rounded-full border text-[0.65rem] font-semibold ${
-                                                    isSimulating
-                                                        ? 'border-emerald-400/60 text-emerald-200'
-                                                        : isPaused
-                                                        ? 'border-amber-400/60 text-amber-200'
-                                                        : 'border-slate-700/70 text-slate-400'
-                                                }`}
-                                                aria-label={isSimulating ? 'Pause simulation' : isPaused ? 'Resume simulation' : 'Run simulation'}
-                                                onMouseDown={(event) => event.stopPropagation()}
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    if (!selectedExperiment || !isFlowReady) return;
-                                                    if (isSimulating) {
-                                                        pauseSimulation();
-                                                    } else {
-                                                        void startSimulation(!isPaused);
-                                                    }
-                                                }}
-                                            >
-                                                {isSimulating ? '⏸' : '▶'}
-                                            </button>
-                                        </div>
-                                    )}
-                                    <div className="mt-2 flex items-center justify-between text-[0.66rem] title tracking-[0.2em] text-slate-500">
-                                        <span>{node.kind.replace('-', ' ')}</span>
-                                        <span>{pendingFrom === node.id ? 'link' : ''}</span>
-                                    </div>
-                                    {canOutput && (
-                                        <button
-                                            className={`absolute -right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border bg-slate-950 ${
-                                                pendingFrom === node.id
-                                                    ? 'border-amber-400/70 text-amber-300'
-                                                    : outgoing
-                                                        ? 'border-emerald-400/70 text-emerald-300'
-                                                        : 'border-emerald-400/40 text-emerald-200'
-                                            }`}
-                                            onMouseDown={(event) => {
-                                                event.stopPropagation();
-                                                setPendingFrom(node.id);
-                                                setCursor({ x: node.x + NODE_WIDTH - HANDLE_CENTER_OFFSET, y: node.y + NODE_HEIGHT / 2 });
-                                            }}
-                                            aria-label="Start connection"
-                                        >
-                                            {pendingFrom === node.id || outgoing ? '●' : '→'}
-                                        </button>
-                                    )}
-                                    {canInput && (
-                                        <button
-                                            className={`absolute -left-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border bg-slate-950 ${
-                                                hoverTarget === node.id
-                                                    ? 'border-amber-400/70 text-amber-300'
-                                                    : incoming
-                                                        ? 'border-emerald-400/70 text-emerald-300'
-                                                        : 'border-cyan-400/40 text-cyan-200'
-                                            }`}
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                handleInputClick(node.id);
-                                            }}
-                                            onMouseDown={(event) => event.stopPropagation()}
-                                            onMouseEnter={() => setHoverTarget(node.id)}
-                                            onMouseLeave={() => setHoverTarget(null)}
-                                            aria-label="Complete connection"
-                                        >
-                                            {incoming || hoverTarget === node.id ? '●' : '+'}
-                                        </button>
-                                    )}
                                 </div>
-                                );
-                                })}
-                                {errorTooltip && (
-                                    <div
-                                        className="absolute z-20 rounded-lg border border-amber-400/60 bg-amber-100/90 px-3 py-2 text-xs text-amber-900 shadow-[0_12px_30px_-20px_rgba(251,191,36,0.6)]"
-                                        style={{ left: errorTooltip.x + 12, top: errorTooltip.y + 12 }}
-                                    >
-                                        {errorTooltip.message}
+                                <div
+                                    ref={canvasRef}
+                                    onWheel={(event) => {
+                                        if (!event.ctrlKey && !event.metaKey) return;
+                                        event.preventDefault();
+                                        const direction = event.deltaY > 0 ? -0.1 : 0.1;
+                                        adjustZoom(zoomRef.current + direction);
+                                    }}
+                                    onMouseDown={(event) => {
+                                        if (event.button !== 0 || pendingFrom) return;
+                                        const target = event.target as HTMLElement;
+                                        if (target.closest('.flow-node') || target.closest('button') || target.closest('input')) {
+                                            return;
+                                        }
+                                        event.preventDefault();
+                                        panningRef.current = {
+                                            startX: event.clientX,
+                                            startY: event.clientY,
+                                            panX: panRef.current.x,
+                                            panY: panRef.current.y,
+                                        };
+                                    }}
+                                    onMouseMove={(event) => {
+                                        if (!canvasRef.current || !pendingFrom) return;
+                                        const rect = canvasRef.current.getBoundingClientRect();
+                                        const next = {
+                                            x: (event.clientX - rect.left - panRef.current.x) / zoomRef.current,
+                                            y: (event.clientY - rect.top - panRef.current.y) / zoomRef.current,
+                                        };
+                                        const target = nodes
+                                            .filter((node) => node.id !== pendingFrom)
+                                            .map((node) => {
+                                                const handleX = node.x - HANDLE_CENTER_OFFSET;
+                                                const handleY = node.y + NODE_HEIGHT / 2;
+                                                const dx = next.x - handleX;
+                                                const dy = next.y - handleY;
+                                                return { node, distance: Math.hypot(dx, dy), handleX, handleY };
+                                            })
+                                            .sort((a, b) => a.distance - b.distance)[0];
+
+                                        if (target && target.distance < 20 && isValidConnection(pendingFrom, target.node.id)) {
+                                            setHoverTarget(target.node.id);
+                                            setCursor({ x: target.handleX, y: target.handleY });
+                                        } else {
+                                            setHoverTarget(null);
+                                            setCursor(next);
+                                        }
+                                    }}
+                                    onClick={() => {
+                                        if (pendingFrom) {
+                                            reconnectRef.current = null;
+                                            setPendingFrom(null);
+                                            setHoverTarget(null);
+                                            setCursor(null);
+                                            return;
+                                        }
+                                        setSelectedNodeId(null);
+                                    }}
+                                    className="flow-canvas relative mt-4 min-h-[520px] overflow-hidden rounded-2xl border border-slate-800/70 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.5),rgba(2,6,23,0.9))] p-6"
+                                >
+                                    <div className="absolute right-6 top-6 z-20 flex items-center gap-3 rounded-full border border-slate-700/60 bg-slate-950/80 px-4 py-2 text-xs text-slate-200 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.7)]">
+                                        <span className="text-[0.5rem] uppercase tracking-[0.3em] text-slate-400">Zoom</span>
+                                        <input
+                                            type="range"
+                                            min={0.6}
+                                            max={1.6}
+                                            step={0.05}
+                                            value={zoom}
+                                            onChange={(event) => adjustZoom(Number(event.target.value))}
+                                            className="h-1 w-24 accent-emerald-300"
+                                        />
+                                        <span className="min-w-[2.5rem] text-center text-emerald-200">
+                                            {Math.round(zoom * 100)}%
+                                        </span>
                                     </div>
-                                )}
-                            </div>
-                        </div>
-                        <SimulationOutput
-                            simulationSeries={simulationSeries}
-                            filteredSeries={filteredSeries}
-                            rangeStart={rangeStart}
-                            rangeEnd={rangeEnd}
-                            setRangeStart={setRangeStart}
-                            setRangeEnd={setRangeEnd}
-                            pickerOpen={pickerOpen}
-                            setPickerOpen={setPickerOpen}
-                            pickerPos={pickerPos}
-                            setPickerPos={setPickerPos}
-                            pickerRef={pickerRef}
-                            startRef={startRef}
-                            endRef={endRef}
-                            pickerMonth={pickerMonth}
-                            setPickerMonth={setPickerMonth}
-                            pickerValue={pickerValue}
-                            setPickerValue={setPickerValue}
-                            renderCalendar={renderCalendar}
-                            hours={hours}
-                            minutes={minutes}
-                            applyPickerValue={(value) => applyPickerValue(value)}
-                            selectedExperiment={selectedExperiment}
-                            connectedGroups={connectedGroups}
-                            metricsSummary={metricsSummary}
-                            isSimulating={isSimulating}
-                            isPaused={isPaused}
-                            flowConnected={flowConnected}
-                            isFlowReady={isFlowReady}
-                            getGroupVariantKey={getGroupVariantKey}
-                        />
+                                    <div
+                                        className="absolute inset-0 origin-top-left overflow-visible"
+                                        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+                                    >
+                                        <div className="pointer-events-none absolute inset-0 opacity-30 [background-image:radial-gradient(#334155_1px,transparent_1px)] [background-size:24px_24px]"></div>
+
+                                        <svg className="absolute inset-0 h-full w-full pointer-events-none overflow-visible">
+                                            {edges.map((edge) => {
+                                                const fromNode = nodes.find((node) => node.id === edge.from);
+                                                const toNode = nodes.find((node) => node.id === edge.to);
+                                                if (!fromNode || !toNode) return null;
+                                                const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
+                                                const startY = fromNode.y + NODE_HEIGHT / 2;
+                                                const endX = toNode.x - HANDLE_CENTER_OFFSET;
+                                                const endY = toNode.y + NODE_HEIGHT / 2;
+                                                const midX = (startX + endX) / 2;
+                                                const isActiveEdge =
+                                                    isSimulating &&
+                                                    reachableToRun.has(edge.from) &&
+                                                    reachableToRun.has(edge.to) &&
+                                                    (!startNode || (reachableFromStart.has(edge.from) && reachableFromStart.has(edge.to)));
+                                                return (
+                                                    <path
+                                                        key={`${edge.from}-${edge.to}`}
+                                                        d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
+                                                        stroke="rgba(16,185,129,0.6)"
+                                                        strokeWidth="1.5"
+                                                        vectorEffect="non-scaling-stroke"
+                                                        fill="none"
+                                                        className={isActiveEdge ? 'flow-line' : ''}
+                                                    />
+                                                );
+                                            })}
+                                            {pendingFrom && cursor ? (
+                                                (() => {
+                                                    const fromNode = nodes.find((node) => node.id === pendingFrom);
+                                                    if (!fromNode) return null;
+                                                    const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
+                                                    const startY = fromNode.y + NODE_HEIGHT / 2;
+                                                    const midX = (startX + cursor.x) / 2;
+                                                    return (
+                                                        <path
+                                                            d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${cursor.y}, ${cursor.x} ${cursor.y}`}
+                                                            stroke="rgba(56,189,248,0.6)"
+                                                            strokeWidth="1.5"
+                                                            vectorEffect="non-scaling-stroke"
+                                                            fill="none"
+                                                            strokeDasharray="6 6"
+                                                        />
+                                                    );
+                                                })()
+                                            ) : null}
+                                        </svg>
+                                        <svg className="absolute inset-0 h-full w-full overflow-visible">
+                                            {edges.map((edge) => {
+                                                const fromNode = nodes.find((node) => node.id === edge.from);
+                                                const toNode = nodes.find((node) => node.id === edge.to);
+                                                if (!fromNode || !toNode) return null;
+                                                const startX = fromNode.x + NODE_WIDTH - HANDLE_CENTER_OFFSET;
+                                                const startY = fromNode.y + NODE_HEIGHT / 2;
+                                                const endX = toNode.x - HANDLE_CENTER_OFFSET;
+                                                const endY = toNode.y + NODE_HEIGHT / 2;
+                                                const midX = (startX + endX) / 2;
+                                                return (
+                                                    <path
+                                                        key={`hit-${edge.from}-${edge.to}`}
+                                                        d={`M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`}
+                                                        stroke="transparent"
+                                                        strokeWidth="12"
+                                                        vectorEffect="non-scaling-stroke"
+                                                        fill="none"
+                                                        className="cursor-pointer"
+                                                        onMouseDown={(event) => {
+                                                            event.stopPropagation();
+                                                            if (!canvasRef.current) return;
+                                                            const rect = canvasRef.current.getBoundingClientRect();
+                                                            const next = {
+                                                                x: (event.clientX - rect.left - panRef.current.x) / zoomRef.current,
+                                                                y: (event.clientY - rect.top - panRef.current.y) / zoomRef.current,
+                                                            };
+                                                            reconnectRef.current = edge;
+                                                            setEdges((prev) => prev.filter((item) => !(item.from === edge.from && item.to === edge.to)));
+                                                            setPendingFrom(edge.from);
+                                                            setCursor(next);
+                                                        }}
+                                                        onDoubleClick={() => {
+                                                            setEdges((prev) => prev.filter((item) => !(item.from === edge.from && item.to === edge.to)));
+                                                        }}
+                                                    />
+                                                );
+                                            })}
+                                        </svg>
+
+                                        {nodes.map((node) => {
+                                            const incoming = hasIncoming(node.id);
+                                            const outgoing = hasOutgoing(node.id);
+                                            const canOutput = node.kind !== 'trigger-run';
+                                            const canInput = node.kind !== 'trigger-start';
+                                            const isRunNode = node.kind === 'trigger-run';
+                                            return (
+                                                <div
+                                                    key={node.id}
+                                                    className={`flow-node absolute h-[72px] w-44 cursor-grab select-none rounded-2xl border bg-slate-900/80 px-4 py-3 text-sm font-semibold text-slate-200 shadow-[0_20px_30px_-25px_rgba(15,23,42,0.9)] ${nodeColorByKind[node.kind].border}`}
+                                                    style={{ left: node.x, top: node.y }}
+                                                    onMouseDown={(event) => startDrag(event, node.id)}
+                                                    onClick={(event) => {
+                                                        event.stopPropagation();
+                                                        setSelectedNodeId(node.id);
+                                                    }}
+                                                >
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <span className="truncate">{node.label}</span>
+                                                        <button
+                                                            className="absolute -right-3 -top-3 flex h-6 w-6 items-center justify-center rounded-full border border-slate-700/70 bg-slate-950 text-slate-400 hover:text-rose-400"
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                removeNode(node.id);
+                                                            }}
+                                                            aria-label="Remove node"
+                                                        >
+                                                            ×
+                                                        </button>
+                                                    </div>
+                                                    {isRunNode && (
+                                                        <div className="absolute right-3 top-1/2 flex -translate-y-1/2 flex-col items-center gap-1">
+                                                            <div
+                                                                className={`flex h-5 w-5 items-center justify-center rounded-full border text-[0.6rem] ${isSimulating
+                                                                    ? 'border-emerald-400/60 text-emerald-200 run-pulse'
+                                                                    : isPaused
+                                                                        ? 'border-amber-400/60 text-amber-200'
+                                                                        : 'border-slate-700/70 text-slate-400'
+                                                                    }`}
+                                                                aria-label={isSimulating ? 'Simulation running' : isPaused ? 'Simulation paused' : 'Simulation idle'}
+                                                            >
+                                                                ●
+                                                            </div>
+                                                            <button
+                                                                className={`flex h-6 w-6 items-center justify-center rounded-full border text-[0.65rem] font-semibold ${isSimulating
+                                                                    ? 'border-emerald-400/60 text-emerald-200'
+                                                                    : isPaused
+                                                                        ? 'border-amber-400/60 text-amber-200'
+                                                                        : 'border-slate-700/70 text-slate-400'
+                                                                    }`}
+                                                                aria-label={isSimulating ? 'Pause simulation' : isPaused ? 'Resume simulation' : 'Run simulation'}
+                                                                onMouseDown={(event) => event.stopPropagation()}
+                                                                onClick={(event) => {
+                                                                    event.stopPropagation();
+                                                                    if (!selectedExperiment || !isFlowReady) return;
+                                                                    if (isSimulating) {
+                                                                        pauseSimulation();
+                                                                    } else {
+                                                                        void startSimulation(!isPaused);
+                                                                    }
+                                                                }}
+                                                            >
+                                                                {isSimulating ? '⏸' : '▶'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    <div className="mt-2 flex items-center justify-between text-[0.66rem] title tracking-[0.2em] text-slate-500">
+                                                        <span>{node.kind.replace('-', ' ')}</span>
+                                                        <span>{pendingFrom === node.id ? 'link' : ''}</span>
+                                                    </div>
+                                                    {canOutput && (
+                                                        <button
+                                                            className={`absolute -right-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border bg-slate-950 ${pendingFrom === node.id
+                                                                ? 'border-amber-400/70 text-amber-300'
+                                                                : outgoing
+                                                                    ? 'border-emerald-400/70 text-emerald-300'
+                                                                    : 'border-emerald-400/40 text-emerald-200'
+                                                                }`}
+                                                            onMouseDown={(event) => {
+                                                                event.stopPropagation();
+                                                                setPendingFrom(node.id);
+                                                                setCursor({ x: node.x + NODE_WIDTH - HANDLE_CENTER_OFFSET, y: node.y + NODE_HEIGHT / 2 });
+                                                            }}
+                                                            aria-label="Start connection"
+                                                        >
+                                                            {pendingFrom === node.id || outgoing ? '●' : '→'}
+                                                        </button>
+                                                    )}
+                                                    {canInput && (
+                                                        <button
+                                                            className={`absolute -left-4 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-full border bg-slate-950 ${hoverTarget === node.id
+                                                                ? 'border-amber-400/70 text-amber-300'
+                                                                : incoming
+                                                                    ? 'border-emerald-400/70 text-emerald-300'
+                                                                    : 'border-cyan-400/40 text-cyan-200'
+                                                                }`}
+                                                            onClick={(event) => {
+                                                                event.stopPropagation();
+                                                                handleInputClick(node.id);
+                                                            }}
+                                                            onMouseDown={(event) => event.stopPropagation()}
+                                                            onMouseEnter={() => setHoverTarget(node.id)}
+                                                            onMouseLeave={() => setHoverTarget(null)}
+                                                            aria-label="Complete connection"
+                                                        >
+                                                            {incoming || hoverTarget === node.id ? '●' : '+'}
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                        {errorTooltip && (
+                                            <div
+                                                className="absolute z-20 rounded-lg border border-amber-400/60 bg-amber-100/90 px-3 py-2 text-xs text-amber-900 shadow-[0_12px_30px_-20px_rgba(251,191,36,0.6)]"
+                                                style={{ left: errorTooltip.x + 12, top: errorTooltip.y + 12 }}
+                                            >
+                                                {errorTooltip.message}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <SimulationOutput
+                                    simulationSeries={simulationSeries}
+                                    filteredSeries={filteredSeries}
+                                    rangeStart={rangeStart}
+                                    rangeEnd={rangeEnd}
+                                    setRangeStart={setRangeStart}
+                                    setRangeEnd={setRangeEnd}
+                                    pickerOpen={pickerOpen}
+                                    setPickerOpen={setPickerOpen}
+                                    pickerPos={pickerPos}
+                                    setPickerPos={setPickerPos}
+                                    pickerRef={pickerRef}
+                                    startRef={startRef}
+                                    endRef={endRef}
+                                    pickerMonth={pickerMonth}
+                                    setPickerMonth={setPickerMonth}
+                                    pickerValue={pickerValue}
+                                    setPickerValue={setPickerValue}
+                                    renderCalendar={renderCalendar}
+                                    hours={hours}
+                                    minutes={minutes}
+                                    applyPickerValue={(value) => applyPickerValue(value)}
+                                    selectedExperiment={selectedExperiment}
+                                    connectedGroups={connectedGroups}
+                                    metricsSummary={metricsSummary}
+                                    isSimulating={isSimulating}
+                                    isPaused={isPaused}
+                                    flowConnected={flowConnected}
+                                    isFlowReady={isFlowReady}
+                                    getGroupVariantKey={getGroupVariantKey}
+                                />
                             </div>
                         </div>
                     </div>

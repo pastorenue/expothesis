@@ -5,7 +5,7 @@ use crate::services::AnalyticsService;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/api/analytics")
+        web::scope("/analytics")
             .route("/overview", web::get().to(get_overview))
             .route("/alerts", web::post().to(ingest_alert)),
     );

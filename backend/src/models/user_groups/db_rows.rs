@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
 pub struct UserGroupRow {
-    pub org_id: String,
+    pub account_id: String,
     pub id: String,
     pub name: String,
     pub description: String,
@@ -14,7 +14,7 @@ pub struct UserGroupRow {
 
 #[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
 pub struct UserAssignmentRow {
-    pub org_id: String,
+    pub account_id: String,
     pub user_id: String,
     pub experiment_id: String,
     pub variant: String,

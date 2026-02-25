@@ -4,19 +4,21 @@ use crate::stats;
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use log::info;
+use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct CupedService {
-    db: ClickHouseClient,
+    pg: PgPool,
+    ch: ClickHouseClient,
 }
 
 impl CupedService {
-    pub fn new(db: ClickHouseClient) -> Self {
-        Self { db }
+    pub fn new(pg: PgPool, ch: ClickHouseClient) -> Self {
+        Self { pg, ch }
     }
 
-    /// Save or update CUPED configuration for an experiment
+    /// Save or update CUPED configuration for an experiment (stored in Postgres)
     pub async fn save_config(
         &self,
         experiment_id: Uuid,
@@ -32,18 +34,25 @@ impl CupedService {
             updated_at: now,
         };
 
-        let row = CupedConfigRow {
-            experiment_id: config.experiment_id.to_string(),
-            covariate_metric: config.covariate_metric.clone(),
-            lookback_days: config.lookback_days,
-            min_sample_size: config.min_sample_size as u64,
-            created_at: config.created_at.timestamp() as u32,
-            updated_at: config.updated_at.timestamp() as u32,
-        };
-
-        let mut insert = self.db.client().insert("cuped_configs")?;
-        insert.write(&row).await?;
-        insert.end().await?;
+        sqlx::query(
+            r#"INSERT INTO cuped_configs
+                (experiment_id, covariate_metric, lookback_days, min_sample_size, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (experiment_id) DO UPDATE SET
+                 covariate_metric = EXCLUDED.covariate_metric,
+                 lookback_days    = EXCLUDED.lookback_days,
+                 min_sample_size  = EXCLUDED.min_sample_size,
+                 updated_at       = EXCLUDED.updated_at"#,
+        )
+        .bind(config.experiment_id)
+        .bind(&config.covariate_metric)
+        .bind(config.lookback_days as i32)
+        .bind(config.min_sample_size as i64)
+        .bind(config.created_at)
+        .bind(config.updated_at)
+        .execute(&self.pg)
+        .await
+        .context("Failed to upsert CUPED config")?;
 
         info!(
             "Saved CUPED config for experiment {}: covariate={}, lookback={}d",
@@ -53,32 +62,43 @@ impl CupedService {
         Ok(config)
     }
 
-    /// Get CUPED configuration for an experiment
+    /// Get CUPED configuration for an experiment from Postgres
     pub async fn get_config(&self, experiment_id: Uuid) -> Result<CupedConfig> {
-        let row = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM cuped_configs FINAL WHERE experiment_id = ?")
-            .bind(experiment_id.to_string())
-            .fetch_one::<CupedConfigRow>()
-            .await
-            .context("No CUPED configuration found for this experiment")?;
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            experiment_id: Uuid,
+            covariate_metric: String,
+            lookback_days: i32,
+            min_sample_size: i64,
+            created_at: DateTime<Utc>,
+            updated_at: DateTime<Utc>,
+        }
+
+        let r = sqlx::query_as::<_, Row>(
+            r#"SELECT experiment_id, covariate_metric, lookback_days, min_sample_size, created_at, updated_at
+               FROM cuped_configs
+               WHERE experiment_id = $1"#,
+        )
+        .bind(experiment_id)
+        .fetch_one(&self.pg)
+        .await
+        .context("No CUPED configuration found for this experiment")?;
 
         Ok(CupedConfig {
-            experiment_id: Uuid::parse_str(&row.experiment_id)?,
-            covariate_metric: row.covariate_metric,
-            lookback_days: row.lookback_days,
-            min_sample_size: row.min_sample_size as usize,
-            created_at: DateTime::from_timestamp(row.created_at as i64, 0).unwrap_or_default(),
-            updated_at: DateTime::from_timestamp(row.updated_at as i64, 0).unwrap_or_default(),
+            experiment_id: r.experiment_id,
+            covariate_metric: r.covariate_metric,
+            lookback_days: r.lookback_days as u32,
+            min_sample_size: r.min_sample_size as usize,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         })
     }
 
     /// Run CUPED analysis for an experiment.
     ///
-    /// 1. Fetches the CUPED config (covariate metric, lookback window)
-    /// 2. Queries pre-experiment covariate data per user per variant
-    /// 3. Queries post-experiment metric data per user per variant
+    /// 1. Fetches the CUPED config (covariate metric, lookback window) from Postgres
+    /// 2. Queries pre-experiment covariate data per user per variant from ClickHouse
+    /// 3. Queries post-experiment metric data per user per variant from ClickHouse
     /// 4. Matches users appearing in both datasets
     /// 5. Runs CupedCalculator per variant pair (control vs treatment)
     /// 6. Returns CUPED-adjusted results
@@ -100,7 +120,6 @@ impl CupedService {
             anyhow!("Experiment has not started yet — no pre-experiment data boundary")
         })?;
 
-        // Find control variant
         let control_variant = experiment
             .variants
             .iter()
@@ -110,7 +129,6 @@ impl CupedService {
         let mut results = Vec::new();
 
         for variant in experiment.variants.iter().filter(|v| !v.is_control) {
-            // Fetch pre-experiment covariate data per user for control
             let pre_control = self
                 .fetch_user_metrics(
                     experiment_id,
@@ -122,7 +140,6 @@ impl CupedService {
                 )
                 .await?;
 
-            // Fetch pre-experiment covariate data per user for treatment
             let pre_treatment = self
                 .fetch_user_metrics(
                     experiment_id,
@@ -134,7 +151,6 @@ impl CupedService {
                 )
                 .await?;
 
-            // Fetch post-experiment metric data per user for control
             let post_control = self
                 .fetch_user_metrics(
                     experiment_id,
@@ -146,7 +162,6 @@ impl CupedService {
                 )
                 .await?;
 
-            // Fetch post-experiment metric data per user for treatment
             let post_treatment = self
                 .fetch_user_metrics(
                     experiment_id,
@@ -158,13 +173,11 @@ impl CupedService {
                 )
                 .await?;
 
-            // Match users that appear in both pre and post datasets
             let (matched_pre_a, matched_post_a) =
                 Self::match_user_data(&pre_control, &post_control);
             let (matched_pre_b, matched_post_b) =
                 Self::match_user_data(&pre_treatment, &post_treatment);
 
-            // Validate minimum sample sizes
             if matched_pre_a.len() < config.min_sample_size {
                 return Err(anyhow!(
                     "Insufficient matched users for control variant '{}': {} (minimum {})",
@@ -182,7 +195,6 @@ impl CupedService {
                 ));
             }
 
-            // Run CUPED calculator for each variant
             let calc_a = stats::CupedCalculator::new(matched_pre_a, matched_post_a.clone())?;
             let calc_b = stats::CupedCalculator::new(matched_pre_b, matched_post_b.clone())?;
 
@@ -227,10 +239,7 @@ impl CupedService {
         Ok(results)
     }
 
-    /// Fetch per-user metric values from metric_events with optional time bounds.
-    ///
-    /// For pre-experiment data: `before` = experiment start, `lookback_days` limits how far back
-    /// For post-experiment data: `after` = experiment start, `lookback_days` = 0
+    /// Fetch per-user metric values from metric_events (ClickHouse) with optional time bounds.
     async fn fetch_user_metrics(
         &self,
         experiment_id: Uuid,
@@ -273,8 +282,14 @@ impl CupedService {
 
         query.push_str(" GROUP BY user_id");
 
+        #[derive(Debug, clickhouse::Row, serde::Deserialize)]
+        struct UserMetricRow {
+            user_id: String,
+            metric_value: f64,
+        }
+
         let rows = self
-            .db
+            .ch
             .client()
             .query(&query)
             .bind(experiment_id.to_string())
@@ -284,16 +299,12 @@ impl CupedService {
             .await
             .context("Failed to fetch user metrics for CUPED analysis")?;
 
-        let map: HashMap<String, f64> = rows
+        Ok(rows
             .into_iter()
             .map(|r| (r.user_id, r.metric_value))
-            .collect();
-
-        Ok(map)
+            .collect())
     }
 
-    /// Match users that appear in both pre and post datasets.
-    /// Returns paired vectors of (pre_values, post_values) for matched users.
     fn match_user_data(
         pre: &HashMap<String, f64>,
         post: &HashMap<String, f64>,
@@ -332,7 +343,6 @@ mod tests {
 
         assert_eq!(matched_pre.len(), 2);
         assert_eq!(matched_post.len(), 2);
-        // user1 and user3 should be matched
         assert!(matched_pre.contains(&10.0));
         assert!(matched_pre.contains(&30.0));
         assert!(matched_post.contains(&15.0));
@@ -343,7 +353,6 @@ mod tests {
     fn test_match_user_data_no_overlap() {
         let mut pre = HashMap::new();
         pre.insert("user1".to_string(), 10.0);
-
         let mut post = HashMap::new();
         post.insert("user2".to_string(), 20.0);
 
@@ -356,7 +365,6 @@ mod tests {
     fn test_match_user_data_empty() {
         let pre: HashMap<String, f64> = HashMap::new();
         let post: HashMap<String, f64> = HashMap::new();
-
         let (matched_pre, matched_post) = CupedService::match_user_data(&pre, &post);
         assert!(matched_pre.is_empty());
         assert!(matched_post.is_empty());

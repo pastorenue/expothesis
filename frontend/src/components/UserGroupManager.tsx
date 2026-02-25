@@ -9,8 +9,10 @@ import { GroupGrid } from './user-groups/GroupGrid';
 import { SelectedGroupPanel } from './user-groups/SelectedGroupPanel';
 import { UserGroupHeader } from './user-groups/UserGroupHeader';
 import { LoadingSpinner } from './Common';
+import { useAccount } from '../contexts/AccountContext';
 
 export const UserGroupManager: React.FC = () => {
+    const { activeAccountId } = useAccount();
     const queryClient = useQueryClient();
     const [selectedGroup, setSelectedGroup] = useState<UserGroup | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
@@ -29,17 +31,18 @@ export const UserGroupManager: React.FC = () => {
     });
 
     const { data: groups = [], isLoading } = useQuery({
-        queryKey: ['userGroups'],
+        queryKey: ['userGroups', activeAccountId],
         queryFn: async () => {
             const response = await userGroupApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const createMutation = useMutation({
         mutationFn: userGroupApi.create,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['userGroups'] });
+            queryClient.invalidateQueries({ queryKey: ['userGroups', activeAccountId] });
             setShowCreateForm(false);
             setFormData({ name: '', description: '', assignment_rule: 'random' });
         },
@@ -51,7 +54,7 @@ export const UserGroupManager: React.FC = () => {
             return response.data;
         },
         onSuccess: (group) => {
-            queryClient.setQueryData<UserGroup[]>(['userGroups'], (oldData) => {
+            queryClient.setQueryData<UserGroup[]>(['userGroups', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return existing.map((item: UserGroup) => (item.id === group.id ? group : item));
             });
@@ -66,7 +69,7 @@ export const UserGroupManager: React.FC = () => {
             return id;
         },
         onSuccess: (id) => {
-            queryClient.setQueryData<UserGroup[]>(['userGroups'], (oldData) => {
+            queryClient.setQueryData<UserGroup[]>(['userGroups', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return existing.filter((item: UserGroup) => item.id !== id);
             });

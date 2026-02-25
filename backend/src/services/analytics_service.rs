@@ -3,6 +3,7 @@ use crate::models::*;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use log::error;
+use sqlx::PgPool;
 use statrs::distribution::{ChiSquared, ContinuousCDF};
 use uuid::Uuid;
 
@@ -118,11 +119,12 @@ struct RateRow {
 
 pub struct AnalyticsService {
     db: ClickHouseClient,
+    pg: PgPool,
 }
 
 impl AnalyticsService {
-    pub fn new(db: ClickHouseClient) -> Self {
-        Self { db }
+    pub fn new(db: ClickHouseClient, pg: PgPool) -> Self {
+        Self { db, pg }
     }
 
     pub async fn get_overview(&self) -> Result<AnalyticsOverviewResponse> {
@@ -308,23 +310,17 @@ impl AnalyticsService {
     }
 
     async fn build_summary(&self, now: DateTime<Utc>) -> Result<AnalyticsSummary> {
-        let active_row = self
-            .db
-            .client()
-            .query("SELECT count() as total FROM experiments FINAL WHERE status = 'running'")
-            .fetch_one::<CountRow>()
-            .await
-            .context("Failed to count active experiments")?;
+        let active_count: (i64,) =
+            sqlx::query_as("SELECT count(*) FROM experiments WHERE status = 'running'")
+                .fetch_one(&self.pg)
+                .await?;
 
-        let active_delta_row = self
-            .db
-            .client()
-            .query(
-                "SELECT countIf(status = 'running' AND start_date >= now() - INTERVAL 1 DAY) as total FROM experiments FINAL",
-            )
-            .fetch_one::<CountRow>()
-            .await
-            .context("Failed to compute active experiment delta")?;
+        let active_delta: (i64,) = sqlx::query_as("SELECT count(*) FROM experiments WHERE status = 'running' AND start_date >= now() - INTERVAL '1 day'")
+            .fetch_one(&self.pg)
+            .await?;
+
+        let active_total = active_count.0 as u64;
+        let active_delta_val = active_delta.0;
 
         let exposure_today = self
             .db
@@ -347,7 +343,8 @@ impl AnalyticsService {
         let exposures_delta_percent = if exposure_prev.total == 0 {
             0.0
         } else {
-            (exposure_today.total as f64 - exposure_prev.total as f64) / exposure_prev.total as f64 * 100.0
+            (exposure_today.total as f64 - exposure_prev.total as f64) / exposure_prev.total as f64
+                * 100.0
         };
 
         let conversion_row = self
@@ -373,14 +370,16 @@ impl AnalyticsService {
         let current_conversion = conversion_row.value.unwrap_or(0.0);
         let prev_conversion = conversion_prev.value.unwrap_or(0.0);
 
-        let (guardrail_breaches, guardrail_detail) =
-            self.evaluate_guardrails(now).await.unwrap_or((0, "No breaches".to_string()));
+        let (guardrail_breaches, guardrail_detail) = self
+            .evaluate_guardrails(now)
+            .await
+            .unwrap_or((0, "No breaches".to_string()));
 
         let data_freshness_seconds = self.data_freshness_seconds(now).await.unwrap_or(0);
 
         Ok(AnalyticsSummary {
-            active_experiments: active_row.total,
-            active_experiments_delta: active_delta_row.total as i64,
+            active_experiments: active_total,
+            active_experiments_delta: active_delta_val,
             daily_exposures: exposure_today.total,
             exposures_delta_percent,
             primary_conversion_rate: current_conversion,
@@ -396,7 +395,10 @@ impl AnalyticsService {
     async fn build_throughput(&self, now: DateTime<Utc>) -> Result<Vec<AnalyticsThroughputPoint>> {
         let start = now - Duration::hours(24);
         let aligned_start_ts = (start.timestamp() / 10800) * 10800;
-        let aligned_start = Utc.timestamp_opt(aligned_start_ts, 0).single().unwrap_or(start);
+        let aligned_start = Utc
+            .timestamp_opt(aligned_start_ts, 0)
+            .single()
+            .unwrap_or(start);
         let assignment_rows = self
             .db
             .client()
@@ -461,7 +463,10 @@ impl AnalyticsService {
 
     async fn build_metric_coverage(
         &self,
-    ) -> Result<(Vec<AnalyticsMetricCoverageSlice>, AnalyticsMetricCoverageTotals)> {
+    ) -> Result<(
+        Vec<AnalyticsMetricCoverageSlice>,
+        AnalyticsMetricCoverageTotals,
+    )> {
         let rows = self
             .db
             .client()
@@ -527,7 +532,10 @@ impl AnalyticsService {
         ))
     }
 
-    async fn build_primary_trend(&self, now: DateTime<Utc>) -> Result<Vec<AnalyticsPrimaryMetricPoint>> {
+    async fn build_primary_trend(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<AnalyticsPrimaryMetricPoint>> {
         let start = now.date_naive() - Duration::days(6);
         let start_ts = Utc
             .from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap())
@@ -574,7 +582,10 @@ impl AnalyticsService {
         Ok(points)
     }
 
-    async fn build_guardrail_health(&self, now: DateTime<Utc>) -> Result<Vec<AnalyticsGuardrailPoint>> {
+    async fn build_guardrail_health(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<AnalyticsGuardrailPoint>> {
         let start = now.date_naive() - Duration::days(6);
         let start_ts = Utc
             .from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap())
@@ -645,16 +656,25 @@ impl AnalyticsService {
         };
 
         let experiment_id = Uuid::parse_str(&experiment_row.experiment_id).ok();
-        let experiment_data = self
-            .db
-            .client()
-            .query("SELECT id, name, variants, health_checks, primary_metric FROM experiments FINAL WHERE id = ?")
-            .bind(&experiment_row.experiment_id)
-            .fetch_one::<ExperimentRowSlim>()
-            .await
-            .context("Failed to fetch SRM experiment data")?;
+        let experiment_id_uuid = experiment_id.unwrap_or(Uuid::nil());
+        #[derive(sqlx::FromRow)]
+        struct SrmExperimentRow {
+            id: Uuid,
+            name: String,
+            variants: Option<String>,
+        }
 
-        let variants: Vec<Variant> = serde_json::from_str(&experiment_data.variants).unwrap_or_default();
+        let experiment_data = sqlx::query_as::<_, SrmExperimentRow>(
+            "SELECT id, name, variants::text FROM experiments WHERE id = $1",
+        )
+        .bind(experiment_id_uuid)
+        .fetch_one(&self.pg)
+        .await
+        .context("Failed to fetch SRM experiment data")?;
+
+        let variants: Vec<Variant> =
+            serde_json::from_str(experiment_data.variants.as_deref().unwrap_or("[]"))
+                .unwrap_or_default();
         let mut expected_map = std::collections::HashMap::new();
         for variant in variants.iter() {
             expected_map.insert(variant.name.clone(), variant.allocation_percent);
@@ -735,7 +755,9 @@ impl AnalyticsService {
         let landing = self
             .db
             .client()
-            .query("SELECT count() as total FROM sessions WHERE started_at >= now() - INTERVAL 1 DAY")
+            .query(
+                "SELECT count() as total FROM sessions WHERE started_at >= now() - INTERVAL 1 DAY",
+            )
             .fetch_one::<CountRow>()
             .await
             .unwrap_or(CountRow { total: 0 });
@@ -851,7 +873,10 @@ impl AnalyticsService {
         Ok(points)
     }
 
-    async fn build_segment_lift(&self, _now: DateTime<Utc>) -> Result<Vec<AnalyticsSegmentLiftPoint>> {
+    async fn build_segment_lift(
+        &self,
+        _now: DateTime<Utc>,
+    ) -> Result<Vec<AnalyticsSegmentLiftPoint>> {
         let overall = self
             .db
             .client()
@@ -912,18 +937,28 @@ impl AnalyticsService {
             } else {
                 row.conversions as f64 / row.users as f64
             };
-            let lift = if overall_rate == 0.0 { 0.0 } else { (rate - overall_rate) / overall_rate * 100.0 };
+            let lift = if overall_rate == 0.0 {
+                0.0
+            } else {
+                (rate - overall_rate) / overall_rate * 100.0
+            };
             let name = group_map
                 .get(&row.group_id)
                 .cloned()
                 .unwrap_or_else(|| "Segment".to_string());
-            segments.push(AnalyticsSegmentLiftPoint { segment: name, lift });
+            segments.push(AnalyticsSegmentLiftPoint {
+                segment: name,
+                lift,
+            });
         }
 
         Ok(segments)
     }
 
-    async fn build_metric_inventory(&self, now: DateTime<Utc>) -> Result<Vec<AnalyticsMetricInventoryItem>> {
+    async fn build_metric_inventory(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<AnalyticsMetricInventoryItem>> {
         let freshness_rows = self
             .db
             .client()
@@ -942,22 +977,30 @@ impl AnalyticsService {
         let experiments = self
             .db
             .client()
-            .query("SELECT id, name, variants, health_checks, primary_metric FROM experiments FINAL")
+            .query(
+                "SELECT id, name, variants, health_checks, primary_metric FROM experiments FINAL",
+            )
             .fetch_all::<ExperimentRowSlim>()
             .await
             .unwrap_or_default();
 
-        let mut guardrail_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut guardrail_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
         let mut metric_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for experiment in experiments.iter() {
             metric_names.insert(experiment.primary_metric.clone());
-            let checks: Vec<HealthCheck> = serde_json::from_str(&experiment.health_checks).unwrap_or_default();
+            let checks: Vec<HealthCheck> =
+                serde_json::from_str(&experiment.health_checks).unwrap_or_default();
             for check in checks {
                 let guardrail = match check.direction {
                     HealthCheckDirection::AtLeast => format!(">= {}", check.min.unwrap_or(0.0)),
                     HealthCheckDirection::AtMost => format!("<= {}", check.max.unwrap_or(0.0)),
-                    HealthCheckDirection::Between => format!("{} - {}", check.min.unwrap_or(0.0), check.max.unwrap_or(0.0)),
+                    HealthCheckDirection::Between => format!(
+                        "{} - {}",
+                        check.min.unwrap_or(0.0),
+                        check.max.unwrap_or(0.0)
+                    ),
                 };
                 guardrail_map.insert(check.metric_name.clone(), guardrail);
                 metric_names.insert(check.metric_name);
@@ -1013,7 +1056,10 @@ impl AnalyticsService {
             .unwrap_or_default();
 
         if rows.is_empty() {
-            let (breaches, detail) = self.evaluate_guardrails(now).await.unwrap_or((0, "No breaches".to_string()));
+            let (breaches, detail) = self
+                .evaluate_guardrails(now)
+                .await
+                .unwrap_or((0, "No breaches".to_string()));
             if breaches == 0 {
                 return Ok(Vec::new());
             }
@@ -1073,7 +1119,7 @@ impl AnalyticsService {
         })
     }
 
-    async fn evaluate_guardrails(&self, now: DateTime<Utc>) -> Result<(u64, String)> {
+    async fn evaluate_guardrails(&self, _now: DateTime<Utc>) -> Result<(u64, String)> {
         let experiments = self
             .db
             .client()
@@ -1084,7 +1130,8 @@ impl AnalyticsService {
 
         let mut breaches = Vec::new();
         for experiment in experiments {
-            let checks: Vec<HealthCheck> = serde_json::from_str(&experiment.health_checks).unwrap_or_default();
+            let checks: Vec<HealthCheck> =
+                serde_json::from_str(&experiment.health_checks).unwrap_or_default();
             for check in checks {
                 let value_row = self
                     .db
@@ -1100,8 +1147,12 @@ impl AnalyticsService {
 
                 let value = value_row.value.unwrap_or(0.0);
                 let passing = match check.direction {
-                    HealthCheckDirection::AtLeast => check.min.map(|min| value >= min).unwrap_or(true),
-                    HealthCheckDirection::AtMost => check.max.map(|max| value <= max).unwrap_or(true),
+                    HealthCheckDirection::AtLeast => {
+                        check.min.map(|min| value >= min).unwrap_or(true)
+                    }
+                    HealthCheckDirection::AtMost => {
+                        check.max.map(|max| value <= max).unwrap_or(true)
+                    }
                     HealthCheckDirection::Between => {
                         let min_ok = check.min.map(|min| value >= min).unwrap_or(true);
                         let max_ok = check.max.map(|max| value <= max).unwrap_or(true);
@@ -1169,9 +1220,17 @@ impl AnalyticsService {
 
     fn classify_metric(&self, metric: &str) -> String {
         let name = metric.to_lowercase();
-        if name.contains("latency") || name.contains("error") || name.contains("crash") || name.contains("timeout") {
+        if name.contains("latency")
+            || name.contains("error")
+            || name.contains("crash")
+            || name.contains("timeout")
+        {
             "Guardrail".to_string()
-        } else if name.contains("conversion") || name.contains("activation") || name.contains("revenue") || name.contains("retention") {
+        } else if name.contains("conversion")
+            || name.contains("activation")
+            || name.contains("revenue")
+            || name.contains("retention")
+        {
             "Primary".to_string()
         } else if name.contains("holdout") {
             "Feature Impact".to_string()
@@ -1181,7 +1240,10 @@ impl AnalyticsService {
     }
 
     fn format_relative_time(&self, now: DateTime<Utc>, timestamp: u32) -> String {
-        let ts = Utc.timestamp_opt(timestamp as i64, 0).single().unwrap_or(now);
+        let ts = Utc
+            .timestamp_opt(timestamp as i64, 0)
+            .single()
+            .unwrap_or(now);
         let diff = now.signed_duration_since(ts).num_minutes();
         if diff < 1 {
             "just now".to_string()

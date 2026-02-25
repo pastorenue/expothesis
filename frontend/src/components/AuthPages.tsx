@@ -1,6 +1,7 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { authApi } from '../services/api';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { authApi, inviteApi } from '../services/api';
+import { InviteDetailsResponse } from '../types';
 
 const normalizeAuthError = (message: string) => {
     const normalized = message.trim();
@@ -139,25 +140,53 @@ export const LoginPage: React.FC = () => {
 
 export const RegisterPage: React.FC = () => {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [email, setEmail] = React.useState('');
     const [password, setPassword] = React.useState('');
     const [error, setError] = React.useState<string | null>(null);
+    const [inviteDetails, setInviteDetails] = React.useState<InviteDetailsResponse | null>(null);
+    const inviteToken = searchParams.get('token');
+
+    React.useEffect(() => {
+        if (inviteToken) {
+            inviteApi.getDetails(inviteToken).then(res => {
+                setInviteDetails(res.data);
+                setEmail(res.data.email);
+            }).catch(() => {
+                setError('Invalid or expired invitation link.');
+            });
+        }
+    }, [inviteToken]);
 
     const handleRegister = async () => {
         setError(null);
         try {
-            const res = await authApi.register({ email, password });
+            const res = await authApi.register({
+                email,
+                password,
+                invite_token: inviteToken || undefined
+            });
+
             if (res.data.token && res.data.user_id) {
                 window.localStorage.setItem('expothesis-token', res.data.token);
                 window.localStorage.setItem('expothesis-user-id', res.data.user_id);
-                navigate('/home');
+
+                if (inviteToken) {
+                    navigate('/home');
+                } else {
+                    navigate('/setup');
+                }
                 return;
             }
             if (!res.data.requires_otp) {
                 const tokenRes = await authApi.verifyOtp({ email, code: '' });
                 window.localStorage.setItem('expothesis-token', tokenRes.data.token);
                 window.localStorage.setItem('expothesis-user-id', tokenRes.data.user_id);
-                navigate('/home');
+                if (inviteToken) {
+                    navigate('/home');
+                } else {
+                    navigate('/setup');
+                }
                 return;
             }
         } catch (err: unknown) {
@@ -181,9 +210,11 @@ export const RegisterPage: React.FC = () => {
             </header>
             <div className="flex min-h-screen items-center justify-center px-6 py-10">
                 <div className="card w-full max-w-md">
-                    <h2 className="mb-2">Create account</h2>
+                    <h2 className="mb-2">{inviteDetails ? 'Accept Invitation' : 'Create account'}</h2>
                     <p className="text-sm text-slate-400">
-                        Create your account to start experimenting.
+                        {inviteDetails
+                            ? `You've been invited to join ${inviteDetails.account_name}. Create your account to continue.`
+                            : 'Create your account to start experimenting.'}
                     </p>
                     {error && <div className="mt-3 text-sm text-rose-300">{error}</div>}
                     <div className="mt-4 space-y-3">
@@ -203,7 +234,7 @@ export const RegisterPage: React.FC = () => {
                                 placeholder="Password"
                             />
                             <button className="btn-primary w-full" onClick={handleRegister}>
-                                Register
+                                {inviteDetails ? 'Accept & Continue' : 'Register'}
                             </button>
                             <p className="text-sm text-slate-400">
                                 Already have an account? <Link to="/login" className="text-cyan-300">Sign in</Link>

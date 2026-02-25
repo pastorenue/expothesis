@@ -1,35 +1,10 @@
+// ExperimentRow is now defined inside experiment_service.rs (not pub-exported from here)
+// This file retains only the ClickHouse-specific rows for tables that remain in ClickHouse.
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
-pub struct ExperimentRow {
-    pub org_id: String,
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub status: String,
-    pub experiment_type: String,
-    pub sampling_method: String,
-    pub analysis_engine: String,
-    pub sampling_seed: u64,
-    pub feature_flag_id: Option<String>,
-    pub feature_gate_id: Option<String>,
-    pub health_checks: String,
-    pub hypothesis_null: String,
-    pub hypothesis_alternative: String,
-    pub expected_effect_size: f64,
-    pub metric_type: String,
-    pub significance_level: f64,
-    pub power: f64,
-    pub minimum_sample_size: Option<u64>,
-    pub primary_metric: String,
-    pub variants: String,    // JSON
-    pub user_groups: String, // JSON
-    pub start_date: Option<u32>,
-    pub end_date: Option<u32>,
-    pub created_at: u32,
-    pub updated_at: u32,
-}
-
+/// VariantMetricsRow - used in ClickHouse metric aggregation queries
+/// (internal to experiment_service.rs — kept here only if shared across modules)
 #[derive(Debug, Serialize, Deserialize, clickhouse::Row)]
 pub struct VariantMetricsRow {
     pub variant: String,

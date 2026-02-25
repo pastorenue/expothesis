@@ -26,3 +26,13 @@ pub struct FeatureGateEvaluationResponse {
     pub pass: bool,
     pub reason: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFeatureGateRequest {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub status: Option<FeatureGateStatus>,
+    pub rule: Option<String>,
+    pub default_value: Option<bool>,
+    pub pass_value: Option<bool>,
+}

@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse, Responder};
 use futures_util::StreamExt;
-use serde_json::Value;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::config::Config;
 
@@ -44,7 +44,7 @@ pub struct ModelListResponse {
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/api/ai")
+        web::scope("/ai")
             .route("/chat", web::post().to(chat))
             .route("/chat/stream", web::post().to(chat_stream))
             .route("/models", web::get().to(models)),
@@ -88,10 +88,7 @@ async fn models(config: web::Data<Config>) -> impl Responder {
     }
 }
 
-async fn chat(
-    config: web::Data<Config>,
-    payload: web::Json<ChatRequest>,
-) -> impl Responder {
+async fn chat(config: web::Data<Config>, payload: web::Json<ChatRequest>) -> impl Responder {
     let Some(base_url) = config.litellm_base_url.clone() else {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "error": "LITELLM_BASE_URL is not configured"
@@ -103,7 +100,10 @@ async fn chat(
         .clone()
         .unwrap_or_else(|| "gpt-4o-mini".to_string());
 
-    let requested_model = payload.model.clone().unwrap_or_else(|| default_model.clone());
+    let requested_model = payload
+        .model
+        .clone()
+        .unwrap_or_else(|| default_model.clone());
     let model = if config.litellm_models.is_empty() {
         requested_model
     } else if config.litellm_models.contains(&requested_model) {
@@ -142,7 +142,9 @@ async fn chat(
                     .and_then(|choices| choices.as_array())
                     .and_then(|choices| choices.first())
                     .and_then(|choice| choice.get("message"))
-                    .and_then(|message| serde_json::from_value::<ChatMessage>(message.clone()).ok());
+                    .and_then(|message| {
+                        serde_json::from_value::<ChatMessage>(message.clone()).ok()
+                    });
 
                 if let Some(message) = message {
                     if let Some(usage) = result.get("usage") {
@@ -169,10 +171,7 @@ async fn chat(
     }
 }
 
-async fn chat_stream(
-    config: web::Data<Config>,
-    payload: web::Json<ChatRequest>,
-) -> impl Responder {
+async fn chat_stream(config: web::Data<Config>, payload: web::Json<ChatRequest>) -> impl Responder {
     let Some(base_url) = config.litellm_base_url.clone() else {
         return HttpResponse::BadRequest().json(serde_json::json!({
             "error": "LITELLM_BASE_URL is not configured"
@@ -184,7 +183,10 @@ async fn chat_stream(
         .clone()
         .unwrap_or_else(|| "gpt-4o-mini".to_string());
 
-    let requested_model = payload.model.clone().unwrap_or_else(|| default_model.clone());
+    let requested_model = payload
+        .model
+        .clone()
+        .unwrap_or_else(|| default_model.clone());
     let model = if config.litellm_models.is_empty() {
         requested_model
     } else if config.litellm_models.contains(&requested_model) {

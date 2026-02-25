@@ -12,8 +12,8 @@ use sqlx::PgPool;
 use totp_rs::{Algorithm as TotpAlgorithm, TOTP};
 use uuid::Uuid;
 
-use crate::models::{AuthUser, AuthTokenResponse, AuthStatusResponse, TotpSetupResponse};
 use crate::config::Config;
+use crate::models::{AuthStatusResponse, AuthTokenResponse, AuthUser, TotpSetupResponse};
 use sqlx::Row;
 
 #[derive(serde::Serialize)]
@@ -33,9 +33,16 @@ impl AuthService {
         Self { db, config }
     }
 
-    pub async fn register(&self, email: &str, password: &str) -> Result<AuthStatusResponse> {
+    pub async fn register(
+        &self,
+        email: &str,
+        password: &str,
+        invite_token: Option<&str>,
+    ) -> Result<AuthStatusResponse> {
         let hashed = self.hash_password(password)?;
         let user_id = Uuid::new_v4();
+
+        let mut tx = self.db.begin().await?;
 
         sqlx::query(
             "INSERT INTO users (id, email, password_hash, is_email_verified, totp_enabled) VALUES ($1, $2, $3, true, false)",
@@ -43,9 +50,39 @@ impl AuthService {
         .bind(user_id)
         .bind(email)
         .bind(&hashed)
-        .execute(&self.db)
+        .execute(&mut *tx)
         .await
         .context("Failed to create user")?;
+
+        if let Some(token) = invite_token {
+            let row = sqlx::query(
+                "SELECT account_id FROM account_invites WHERE token = $1 AND accepted_at IS NULL AND expires_at > NOW()"
+            )
+            .bind(token)
+            .fetch_optional(&mut *tx)
+            .await
+            .context("Failed to lookup invitation")?;
+
+            if let Some(invite) = row {
+                let account_id: Uuid = invite.get("account_id");
+                sqlx::query(
+                    "INSERT INTO account_memberships (account_id, user_id, role) VALUES ($1, $2, 'member')"
+                )
+                .bind(account_id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
+                .context("Failed to create membership from invite")?;
+
+                sqlx::query("UPDATE account_invites SET accepted_at = NOW() WHERE token = $1")
+                    .bind(token)
+                    .execute(&mut *tx)
+                    .await
+                    .context("Failed to mark invite as accepted")?;
+            }
+        }
+
+        tx.commit().await?;
 
         let token = self.issue_token(user_id).await?;
         Ok(AuthStatusResponse {
@@ -111,7 +148,7 @@ impl AuthService {
     pub async fn verify_otp(
         &self,
         email: &str,
-        code: &str,
+        _code: &str,
         totp_code: Option<&str>,
     ) -> Result<AuthTokenResponse> {
         let user = self.get_user_by_email(email).await?;
@@ -133,8 +170,14 @@ impl AuthService {
             .await
             .context("Failed to store TOTP secret")?;
 
-        let otpauth_url = format!("otpauth://totp/Expothesis:{}?secret={}&issuer=Expothesis", user_id, secret);
-        Ok(TotpSetupResponse { secret, otpauth_url })
+        let otpauth_url = format!(
+            "otpauth://totp/Expothesis:{}?secret={}&issuer=Expothesis",
+            user_id, secret
+        );
+        Ok(TotpSetupResponse {
+            secret,
+            otpauth_url,
+        })
     }
 
     pub async fn verify_totp(&self, user_id: Uuid, code: &str) -> Result<()> {
@@ -220,7 +263,9 @@ impl AuthService {
 
             let email_message = Message::builder()
                 .from(from_addr.parse::<Mailbox>().context("Invalid SMTP_FROM")?)
-                .to(email.parse::<Mailbox>().context("Invalid recipient email")?)
+                .to(email
+                    .parse::<Mailbox>()
+                    .context("Invalid recipient email")?)
                 .subject("Your Expothesis OTP Code")
                 .body(format!(
                     "Your one-time code is: {}\n\nIt expires in 10 minutes.",
@@ -230,12 +275,19 @@ impl AuthService {
             let mut mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&host)
                 .context("Failed to build SMTP transport")?;
 
-            if let (Some(user), Some(pass)) = (self.config.smtp_user.clone(), self.config.smtp_pass.clone()) {
+            if let (Some(user), Some(pass)) =
+                (self.config.smtp_user.clone(), self.config.smtp_pass.clone())
+            {
                 mailer = mailer.credentials(Credentials::new(user, pass));
             }
 
             if self.config.log_only_otp {
-                log::info!("LOG_ONLY_OTP enabled. OTP for {} ({}): {}", email, purpose, code);
+                log::info!(
+                    "LOG_ONLY_OTP enabled. OTP for {} ({}): {}",
+                    email,
+                    purpose,
+                    code
+                );
             } else {
                 match mailer.build().send(email_message).await {
                     Ok(_) => log::info!("Sent OTP email to {} via SMTP {}", email, host),
@@ -243,7 +295,12 @@ impl AuthService {
                 }
             }
         } else {
-            log::info!("SMTP not configured. OTP for {} ({}): {}", email, purpose, code);
+            log::info!(
+                "SMTP not configured. OTP for {} ({}): {}",
+                email,
+                purpose,
+                code
+            );
         }
 
         if self.config.allow_dev_otp {
@@ -253,14 +310,54 @@ impl AuthService {
         }
     }
 
-    async fn consume_otp(&self, user_id: Uuid, code: &str, purpose: &str) -> Result<bool> {
+    async fn consume_otp(
+        &self,
+        user_id: Uuid,
+        code: &str,
+        purpose: &str,
+        invite_token: Option<&str>,
+    ) -> Result<bool> {
+        let mut tx = self
+            .db
+            .begin()
+            .await
+            .context("Failed to begin transaction")?;
+
+        if let Some(token) = invite_token {
+            let row = sqlx::query(
+                "SELECT account_id FROM account_invites WHERE token = $1 AND accepted_at IS NULL AND expires_at > NOW()"
+            )
+            .bind(token)
+            .fetch_optional(&mut *tx)
+            .await
+            .context("Failed to lookup invitation")?;
+
+            if let Some(invite) = row {
+                let account_id: Uuid = invite.get("account_id");
+                sqlx::query(
+                    "INSERT INTO account_memberships (account_id, user_id, role) VALUES ($1, $2, 'member')"
+                )
+                .bind(account_id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
+                .context("Failed to create membership from invite")?;
+
+                sqlx::query("UPDATE account_invites SET accepted_at = NOW() WHERE token = $1")
+                    .bind(token)
+                    .execute(&mut *tx)
+                    .await
+                    .context("Failed to mark invite as accepted")?;
+            }
+        }
+
         let row = sqlx::query(
             "SELECT id FROM otp_codes WHERE user_id = $1 AND code = $2 AND purpose = $3 AND consumed_at IS NULL AND expires_at > NOW()",
         )
         .bind(user_id)
         .bind(code)
         .bind(purpose)
-        .fetch_optional(&self.db)
+        .fetch_optional(&mut *tx)
         .await
         .context("Failed to lookup OTP")?;
 
@@ -268,11 +365,15 @@ impl AuthService {
             let id: Uuid = record.get("id");
             sqlx::query("UPDATE otp_codes SET consumed_at = NOW() WHERE id = $1")
                 .bind(id)
-                .execute(&self.db)
+                .execute(&mut *tx)
                 .await
                 .context("Failed to consume OTP")?;
+            tx.commit().await.context("Failed to commit transaction")?;
             Ok(true)
         } else {
+            tx.rollback()
+                .await
+                .context("Failed to rollback transaction")?;
             Ok(false)
         }
     }
@@ -293,20 +394,23 @@ impl AuthService {
         )
         .context("Failed to encode JWT")?;
 
-        // Pick a default org for the session to satisfy NOT NULL org_id
-        let default_org: Option<Uuid> = sqlx::query_scalar("SELECT id FROM organizations ORDER BY created_at ASC LIMIT 1")
-            .fetch_optional(&self.db)
-            .await
-            .context("Failed to find default organization")?;
+        // Pick a default account for the session to satisfy NOT NULL account_id
+        let default_account: Option<Uuid> =
+            sqlx::query_scalar("SELECT id FROM accounts ORDER BY created_at ASC LIMIT 1")
+                .fetch_optional(&self.db)
+                .await
+                .context("Failed to find default account")?;
 
-        sqlx::query("INSERT INTO sessions (user_id, token_id, expires_at, org_id) VALUES ($1, $2, $3, $4)")
-            .bind(user_id)
-            .bind(token_id)
-            .bind(exp)
-            .bind(default_org.unwrap_or_else(Uuid::nil))
-            .execute(&self.db)
-            .await
-            .context("Failed to store session")?;
+        sqlx::query(
+            "INSERT INTO sessions (user_id, token_id, expires_at, account_id) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(user_id)
+        .bind(token_id)
+        .bind(exp)
+        .bind(default_account.unwrap_or_else(Uuid::nil))
+        .execute(&self.db)
+        .await
+        .context("Failed to store session")?;
 
         Ok(AuthTokenResponse { token, user_id })
     }

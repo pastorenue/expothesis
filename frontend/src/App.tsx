@@ -1,7 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Link, useParams, useLocation, useSearchParams, useNavigate, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { experimentApi, organizationApi, authApi } from './services/api';
+import { experimentApi, accountApi, authApi } from './services/api';
 import { ExperimentCreator } from './components/ExperimentCreator';
 import { ExperimentMonitor } from './components/experiment/ExperimentMonitor';
 import { StatisticalDashboard } from './components/StatisticalDashboard';
@@ -18,8 +18,10 @@ import { LoadingSpinner, StatusBadge } from './components/Common';
 import { UserSettings } from './components/UserSettings';
 import { StatisticalHeader } from './components/statistical-dashboard/StatisticalHeader';
 import { CupedConfigurationModal } from './components/CupedConfigurationModal';
-import type { CreateExperimentRequest, Experiment } from './types';
+import { Account, CreateExperimentRequest, Experiment } from './types';
+import { AccountProvider, useAccount } from './contexts/AccountContext';
 import { ExpothesisTracker } from './sdk/expothesis';
+import { AccountSetupWizard } from './components/onboarding/AccountSetupWizard';
 
 const queryClient = new QueryClient({
     defaultOptions: {
@@ -31,6 +33,7 @@ const queryClient = new QueryClient({
 });
 
 function HomePage() {
+    const { activeAccountId } = useAccount();
     const [showCreator, setShowCreator] = React.useState(false);
     const queryClient = useQueryClient();
     const [searchParams] = useSearchParams();
@@ -47,11 +50,12 @@ function HomePage() {
     }, [searchParams]);
 
     const { data: experiments = [], isLoading } = useQuery({
-        queryKey: ['experiments'],
+        queryKey: ['experiments', activeAccountId],
         queryFn: async () => {
             const response = await experimentApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const sortedExperiments = React.useMemo(() => {
@@ -81,28 +85,28 @@ function HomePage() {
     const startMutation = useMutation({
         mutationFn: (id: string) => experimentApi.start(id),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiments'] });
+            queryClient.invalidateQueries({ queryKey: ['experiments', activeAccountId] });
         },
     });
 
     const pauseMutation = useMutation({
         mutationFn: (id: string) => experimentApi.pause(id),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiments'] });
+            queryClient.invalidateQueries({ queryKey: ['experiments', activeAccountId] });
         },
     });
 
     const stopMutation = useMutation({
         mutationFn: (id: string) => experimentApi.stop(id),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiments'] });
+            queryClient.invalidateQueries({ queryKey: ['experiments', activeAccountId] });
         },
     });
 
     const createMutation = useMutation({
         mutationFn: (data: CreateExperimentRequest) => experimentApi.create(data),
         onSuccess: (response) => {
-            queryClient.setQueryData<Experiment[]>(['experiments'], (oldData) => {
+            queryClient.setQueryData<Experiment[]>(['experiments', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return [response.data, ...existing];
             });
@@ -264,6 +268,7 @@ function HomePage() {
 }
 
 function ExperimentDetailPage() {
+    const { activeAccountId } = useAccount();
     const { id } = useParams<{ id: string }>();
     const queryClient = useQueryClient();
     const [useCuped, setUseCuped] = React.useState(false);
@@ -275,28 +280,29 @@ function ExperimentDetailPage() {
     };
 
     const { data: experiment, isLoading: expLoading } = useQuery({
-        queryKey: ['experiment', id],
+        queryKey: ['experiment', id, activeAccountId],
         queryFn: async () => {
             const response = await experimentApi.get(id!);
             return response.data;
         },
+        enabled: !!id && !!activeAccountId,
     });
 
     const { data: analysis, isLoading: analysisLoading } = useQuery({
-        queryKey: ['analysis', id, useCuped],
+        queryKey: ['analysis', id, useCuped, activeAccountId],
         queryFn: async () => {
             const response = await experimentApi.getAnalysis(id!, useCuped);
             return response.data;
         },
-        enabled: !!experiment,
+        enabled: !!experiment && !!activeAccountId,
         refetchInterval: (experiment?.status === 'running') ? 5000 : false,
     });
 
     const startMutation = useMutation({
         mutationFn: () => experimentApi.start(id!),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiment', id] });
-            queryClient.invalidateQueries({ queryKey: ['analysis', id] });
+            queryClient.invalidateQueries({ queryKey: ['experiment', id, activeAccountId] });
+            queryClient.invalidateQueries({ queryKey: ['analysis', id, activeAccountId] });
         },
         onError: (error: unknown) => {
             console.error('Failed to start experiment:', error);
@@ -307,7 +313,7 @@ function ExperimentDetailPage() {
     const pauseMutation = useMutation({
         mutationFn: () => experimentApi.pause(id!),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiment', id] });
+            queryClient.invalidateQueries({ queryKey: ['experiment', id, activeAccountId] });
         },
         onError: (error: unknown) => {
             console.error('Failed to pause experiment:', error);
@@ -318,8 +324,8 @@ function ExperimentDetailPage() {
     const stopMutation = useMutation({
         mutationFn: () => experimentApi.stop(id!),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['experiment', id] });
-            queryClient.invalidateQueries({ queryKey: ['analysis', id] });
+            queryClient.invalidateQueries({ queryKey: ['experiment', id, activeAccountId] });
+            queryClient.invalidateQueries({ queryKey: ['analysis', id, activeAccountId] });
         },
         onError: (error: unknown) => {
             console.error('Failed to stop experiment:', error);
@@ -594,25 +600,22 @@ function Layout({ children }: { children: React.ReactNode }) {
         queryFn: async () => (await authApi.me(userId)).data,
         enabled: !!userId,
     });
-    const { data: orgs = [] } = useQuery({
-        queryKey: ['organizations'],
-        queryFn: async () => (await organizationApi.list()).data,
+    const { data: accounts = [] } = useQuery({
+        queryKey: ['accounts'],
+        queryFn: async () => (await accountApi.list()).data,
     });
-    const [activeOrgId, setActiveOrgId] = React.useState(
-        () => window.localStorage.getItem('expothesis-org-id') || ''
-    );
+
+    const { activeAccountId, setActiveAccountId } = useAccount();
 
     React.useEffect(() => {
-        if (orgs.length === 0) {
+        if (accounts.length === 0) {
             return;
         }
-        const currentExists = activeOrgId && orgs.some((o) => o.id === activeOrgId);
+        const currentExists = activeAccountId && accounts.some((o) => o.id === activeAccountId);
         if (!currentExists) {
-            const next = orgs[0].id;
-            window.localStorage.setItem('expothesis-org-id', next);
-            setActiveOrgId(next);
+            setActiveAccountId(accounts[0].id);
         }
-    }, [activeOrgId, orgs]);
+    }, [activeAccountId, accounts, setActiveAccountId]);
 
     const navItems = [
         {
@@ -707,25 +710,25 @@ function Layout({ children }: { children: React.ReactNode }) {
         ? 'Experiment Control'
         : location.pathname.startsWith('/home')
             ? 'Home'
-        : location.pathname.startsWith('/user-groups')
-            ? 'User Segments'
-            : location.pathname.startsWith('/simulation-studio')
-                ? 'Simulation Studio'
-            : location.pathname.startsWith('/feature-flags')
-                ? 'Feature Flags'
-            : location.pathname.startsWith('/sessions')
-                ? 'Sessions'
-            : location.pathname.startsWith('/templates')
-                ? 'Templates/Plan'
-            : location.pathname.startsWith('/insights')
-                ? 'Insights'
-            : location.pathname.startsWith('/settings')
-                ? 'User Settings'
-            : location.pathname.startsWith('/ai-assist')
-                ? 'AI Assist'
-            : location.pathname.startsWith('/dashboard')
-                ? 'Experiment Dashboard'
-            : 'Experiment Dashboard';
+            : location.pathname.startsWith('/user-groups')
+                ? 'User Segments'
+                : location.pathname.startsWith('/simulation-studio')
+                    ? 'Simulation Studio'
+                    : location.pathname.startsWith('/feature-flags')
+                        ? 'Feature Flags'
+                        : location.pathname.startsWith('/sessions')
+                            ? 'Sessions'
+                            : location.pathname.startsWith('/templates')
+                                ? 'Templates/Plan'
+                                : location.pathname.startsWith('/insights')
+                                    ? 'Insights'
+                                    : location.pathname.startsWith('/settings')
+                                        ? 'User Settings'
+                                        : location.pathname.startsWith('/ai-assist')
+                                            ? 'AI Assist'
+                                            : location.pathname.startsWith('/dashboard')
+                                                ? 'Experiment Dashboard'
+                                                : 'Experiment Dashboard';
 
     React.useEffect(() => {
         const saved = window.localStorage.getItem('expothesis-theme');
@@ -850,6 +853,29 @@ function Layout({ children }: { children: React.ReactNode }) {
 
                     <div className="sidebar-pill">Experiment Suite</div>
 
+                    <div className="px-3 pb-4">
+                        <div className="relative">
+                            <select
+                                className="w-full appearance-none rounded-lg border border-slate-800/70 bg-slate-900/50 px-3 py-2 text-sm text-slate-200 focus:border-cyan-500/50 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                                value={activeAccountId ?? ''}
+                                onChange={(e) => setActiveAccountId(e.target.value)}
+                            >
+                                {accounts.map((account: Account) => (
+                                    <option key={account.id} value={account.id} className="bg-slate-900 text-slate-200">
+                                        {account.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                                <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+                                    <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mb-4 border-b border-slate-800/60 mx-3" />
+
                     <nav className="space-y-2">
                         {navItems.map((item) => {
                             const isActive =
@@ -931,30 +957,30 @@ function Layout({ children }: { children: React.ReactNode }) {
                             >
                                 <svg viewBox="0 0 24 24" className="mx-auto h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h16M4 17h10" />
-                    </svg>
-                </button>
-                <div>
-                    <div className="topbar-title">{pageTitle}</div>
-                </div>
-            </div>
-            <div className="flex items-center gap-3">
-                <div className="meta-chip">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-cyan-200">
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 9V4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5V9M3 21h18M4 21v-9.5A1.5 1.5 0 0 1 5.5 10h13A1.5 1.5 0 0 1 20 11.5V21" />
-                        </svg>
-                    </div>
-                    <div className="leading-tight">
-                        <div className="text-sm font-semibold text-slate-100">
-                            {orgs.find((o) => o.id === activeOrgId)?.name ?? 'No org'}
+                                </svg>
+                            </button>
+                            <div>
+                                <div className="topbar-title">{pageTitle}</div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-                <div className="meta-chip">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-200 font-semibold">
-                        {(userProfile?.email?.[0] || '?').toUpperCase()}
-                    </div>
-                    <div className="leading-tight">
+                        <div className="flex items-center gap-3">
+                            <div className="meta-chip">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-800 text-cyan-200">
+                                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 9V4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5V9M3 21h18M4 21v-9.5A1.5 1.5 0 0 1 5.5 10h13A1.5 1.5 0 0 1 20 11.5V21" />
+                                    </svg>
+                                </div>
+                                <div className="leading-tight">
+                                    <div className="text-sm font-semibold text-slate-100">
+                                        {accounts.find((o) => o.id === activeAccountId)?.name ?? 'No account'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="meta-chip">
+                                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-200 font-semibold">
+                                    {(userProfile?.email?.[0] || '?').toUpperCase()}
+                                </div>
+                                <div className="leading-tight">
                                     <div className="text-sm font-semibold text-slate-100">
                                         {userProfile?.email || '—'}
                                     </div>
@@ -1013,37 +1039,40 @@ function App() {
     return (
         <QueryClientProvider client={queryClient}>
             <BrowserRouter>
-                <Layout>
-                    <Routes>
-                        <Route path="/" element={<LandingPage />} />
-                        <Route path="/login" element={<LoginPage />} />
-                        <Route path="/register" element={<RegisterPage />} />
-                        <Route path="/home" element={<HomeOverview />} />
-                        <Route path="/dashboard" element={<HomePage />} />
-                        <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
-                        <Route path="/user-groups" element={<UserGroupManager />} />
-                        <Route path="/insights" element={<AnalyticsMonitoringDashboard />} />
-                        <Route path="/ai-assist" element={<AiAssistHub />} />
-                        <Route path="/simulation-studio" element={<SimulationStudio />} />
-                        <Route path="/feature-flags" element={<FeatureFlagManager />} />
-                        <Route path="/templates" element={<TemplatesPlan />} />
-                        <Route path="/settings" element={<UserSettings />} />
-                        <Route
-                            path="/sessions"
-                            element={
-                                <div className="space-y-6">
-                                    <div>
-                                        <h1>Session Replay</h1>
-                                        <p className="mt-1 text-slate-400">
-                                            Review session replays, heatmaps, and live activity.
-                                        </p>
+                <AccountProvider>
+                    <Layout>
+                        <Routes>
+                            <Route path="/" element={<LandingPage />} />
+                            <Route path="/login" element={<LoginPage />} />
+                            <Route path="/register" element={<RegisterPage />} />
+                            <Route path="/home" element={<HomeOverview />} />
+                            <Route path="/setup" element={<AccountSetupWizard />} />
+                            <Route path="/dashboard" element={<HomePage />} />
+                            <Route path="/experiment/:id" element={<ExperimentDetailPage />} />
+                            <Route path="/user-groups" element={<UserGroupManager />} />
+                            <Route path="/insights" element={<AnalyticsMonitoringDashboard />} />
+                            <Route path="/ai-assist" element={<AiAssistHub />} />
+                            <Route path="/simulation-studio" element={<SimulationStudio />} />
+                            <Route path="/feature-flags" element={<FeatureFlagManager />} />
+                            <Route path="/templates" element={<TemplatesPlan />} />
+                            <Route path="/settings" element={<UserSettings />} />
+                            <Route
+                                path="/sessions"
+                                element={
+                                    <div className="space-y-6">
+                                        <div>
+                                            <h1>Session Replay</h1>
+                                            <p className="mt-1 text-slate-400">
+                                                Review session replays, heatmaps, and live activity.
+                                            </p>
+                                        </div>
+                                        <SessionReplayPanel />
                                     </div>
-                                    <SessionReplayPanel />
-                                </div>
-                            }
-                        />
-                    </Routes>
-                </Layout>
+                                }
+                            />
+                        </Routes>
+                    </Layout>
+                </AccountProvider>
             </BrowserRouter>
         </QueryClientProvider>
     );

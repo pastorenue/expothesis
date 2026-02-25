@@ -40,7 +40,9 @@ import type {
     SdkTokensResponse,
     RotateSdkTokensRequest,
     AuthUserProfile,
-    Organization,
+    Account,
+    CreateInviteRequest,
+    InviteDetailsResponse,
 } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
@@ -54,14 +56,14 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
     const token = window.localStorage.getItem('expothesis-token');
-    const orgId = window.localStorage.getItem('expothesis-org-id');
+    const accountId = window.localStorage.getItem('expothesis-account-id');
     if (token) {
         config.headers = config.headers ?? {};
         config.headers.Authorization = `Bearer ${token}`;
     }
-    if (orgId) {
+    if (accountId) {
         config.headers = config.headers ?? {};
-        config.headers['X-Org-Id'] = orgId;
+        config.headers['X-Account-Id'] = accountId;
     }
     return config;
 });
@@ -191,10 +193,20 @@ export const featureGateApi = {
         api.post<FeatureGateEvaluationResponse>(`/feature-gates/${id}/evaluate`, data),
 };
 
-// Organizations
-export const organizationApi = {
-    list: () => api.get<Organization[]>('/organizations'),
-    create: (name: string) => api.post('/organizations', { name }),
+// Accounts
+export const accountApi = {
+    list: () => api.get<Account[]>('/accounts'),
+    create: (name: string) => api.post('/accounts', { name }),
+    createInvite: (accountId: string, data: CreateInviteRequest) =>
+        api.post<{ token: string }>(`/accounts/${accountId}/invites`, data),
+};
+
+// Invites
+export const inviteApi = {
+    getDetails: (token: string) =>
+        api.get<InviteDetailsResponse>(`/invites/${token}`),
+    accept: (token: string) =>
+        api.post('/invites/accept', { token }),
 };
 
 // Tracking

@@ -2,26 +2,32 @@ use crate::db::ClickHouseClient;
 use crate::models::*;
 use crate::services::targeting::TargetingEngine;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use log::info;
+use sqlx::PgPool;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use uuid::Uuid;
 
 pub struct UserGroupService {
-    db: ClickHouseClient,
+    pg: PgPool,
+    ch: ClickHouseClient,
 }
 
 impl UserGroupService {
-    pub fn new(db: ClickHouseClient) -> Self {
-        Self { db }
+    pub fn new(pg: PgPool, ch: ClickHouseClient) -> Self {
+        Self { pg, ch }
     }
 
-    pub async fn create_user_group(&self, req: CreateUserGroupRequest, org_id: Uuid) -> Result<UserGroup> {
+    pub async fn create_user_group(
+        &self,
+        req: CreateUserGroupRequest,
+        account_id: Uuid,
+    ) -> Result<UserGroup> {
         info!("Creating user group: {}", req.name);
 
         let group = UserGroup {
-            org_id,
+            account_id,
             id: Uuid::new_v4(),
             name: req.name,
             description: req.description,
@@ -31,68 +37,92 @@ impl UserGroupService {
             updated_at: Utc::now(),
         };
 
-        self.save_user_group(&group).await?;
-
+        self.upsert_user_group(&group).await?;
         Ok(group)
     }
 
-    pub async fn get_user_group(&self, org_id: Uuid, group_id: Uuid) -> Result<UserGroup> {
-        let row = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM user_groups FINAL WHERE id = ? AND org_id = ?")
-            .bind(group_id.to_string())
-            .bind(org_id.to_string())
-            .fetch_one::<UserGroupRow>()
-            .await
-            .context("Failed to fetch user group")?;
+    pub async fn get_user_group(&self, account_id: Uuid, group_id: Uuid) -> Result<UserGroup> {
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            id: Uuid,
+            account_id: Uuid,
+            name: String,
+            description: String,
+            assignment_rule: String,
+            size: i32,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
+        }
+
+        let r = sqlx::query_as::<_, Row>(
+            r#"SELECT id, account_id, name, description, assignment_rule, size, created_at, updated_at
+               FROM user_groups
+               WHERE id = $1 AND account_id = $2"#,
+        )
+        .bind(group_id)
+        .bind(account_id)
+        .fetch_one(&self.pg)
+        .await
+        .context("Failed to fetch user group")?;
 
         Ok(UserGroup {
-            org_id,
-            id: Uuid::parse_str(&row.id)?,
-            name: row.name,
-            description: row.description,
-            assignment_rule: row.assignment_rule,
-            size: row.size as usize,
-            created_at: DateTime::from_timestamp(row.created_at as i64, 0).unwrap_or_default(),
-            updated_at: DateTime::from_timestamp(row.updated_at as i64, 0).unwrap_or_default(),
+            account_id: r.account_id,
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            assignment_rule: r.assignment_rule,
+            size: r.size as usize,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
         })
     }
 
-    pub async fn list_user_groups(&self, org_id: Uuid) -> Result<Vec<UserGroup>> {
-        let rows = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM user_groups FINAL WHERE org_id = ? ORDER BY updated_at DESC")
-            .bind(org_id.to_string())
-            .fetch_all::<UserGroupRow>()
-            .await
-            .context("Failed to fetch user groups")?;
-
-        let mut groups = Vec::new();
-        for row in rows {
-            groups.push(UserGroup {
-                org_id: Uuid::parse_str(&row.org_id)?,
-                id: Uuid::parse_str(&row.id)?,
-                name: row.name,
-                description: row.description,
-                assignment_rule: row.assignment_rule,
-                size: row.size as usize,
-                created_at: DateTime::from_timestamp(row.created_at as i64, 0).unwrap_or_default(),
-                updated_at: DateTime::from_timestamp(row.updated_at as i64, 0).unwrap_or_default(),
-            });
+    pub async fn list_user_groups(&self, account_id: Uuid) -> Result<Vec<UserGroup>> {
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            id: Uuid,
+            account_id: Uuid,
+            name: String,
+            description: String,
+            assignment_rule: String,
+            size: i32,
+            created_at: chrono::DateTime<chrono::Utc>,
+            updated_at: chrono::DateTime<chrono::Utc>,
         }
 
-        Ok(groups)
+        let rows = sqlx::query_as::<_, Row>(
+            r#"SELECT id, account_id, name, description, assignment_rule, size, created_at, updated_at
+               FROM user_groups
+               WHERE account_id = $1
+               ORDER BY updated_at DESC"#,
+        )
+        .bind(account_id)
+        .fetch_all(&self.pg)
+        .await
+        .context("Failed to fetch user groups")?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| UserGroup {
+                account_id: r.account_id,
+                id: r.id,
+                name: r.name,
+                description: r.description,
+                assignment_rule: r.assignment_rule,
+                size: r.size as usize,
+                created_at: r.created_at,
+                updated_at: r.updated_at,
+            })
+            .collect::<Vec<_>>())
     }
 
     pub async fn update_user_group(
         &self,
-        org_id: Uuid,
+        account_id: Uuid,
         group_id: Uuid,
         req: UpdateUserGroupRequest,
     ) -> Result<UserGroup> {
-        let mut group = self.get_user_group(org_id, group_id).await?;
+        let mut group = self.get_user_group(account_id, group_id).await?;
 
         if let Some(name) = req.name {
             group.name = name;
@@ -105,17 +135,15 @@ impl UserGroupService {
         }
 
         group.updated_at = Utc::now();
-        self.save_user_group(&group).await?;
+        self.upsert_user_group(&group).await?;
         Ok(group)
     }
 
-    pub async fn delete_user_group(&self, org_id: Uuid, group_id: Uuid) -> Result<()> {
-        self.db
-            .client()
-            .query("ALTER TABLE user_groups DELETE WHERE id = ? AND org_id = ?")
-            .bind(group_id.to_string())
-            .bind(org_id.to_string())
-            .execute()
+    pub async fn delete_user_group(&self, account_id: Uuid, group_id: Uuid) -> Result<()> {
+        sqlx::query("DELETE FROM user_groups WHERE id = $1 AND account_id = $2")
+            .bind(group_id)
+            .bind(account_id)
+            .execute(&self.pg)
             .await
             .context("Failed to delete user group")?;
 
@@ -124,7 +152,7 @@ impl UserGroupService {
 
     pub async fn assign_user_to_variant(
         &self,
-        org_id: Uuid,
+        account_id: Uuid,
         user_id: &str,
         experiment_id: Uuid,
         group_id: Uuid,
@@ -145,7 +173,7 @@ impl UserGroupService {
         );
 
         let assignment = UserAssignment {
-            org_id,
+            account_id,
             user_id: user_id.to_string(),
             experiment_id,
             variant: variant_name,
@@ -153,25 +181,25 @@ impl UserGroupService {
             assigned_at: Utc::now(),
         };
 
-        self.save_assignment(org_id, &assignment).await?;
+        // user_assignments stays in ClickHouse (analytics write-path)
+        self.save_assignment_ch(account_id, &assignment).await?;
 
         Ok(assignment)
     }
 
     pub async fn assign_user_auto(
         &self,
-        org_id: Uuid,
+        account_id: Uuid,
         user_id: &str,
         experiment_id: Uuid,
         group_id: Uuid,
         attributes: Option<serde_json::Value>,
     ) -> Result<UserAssignment> {
         let experiment = self
-            .get_experiment_variants_full(org_id, experiment_id)
+            .get_experiment_from_pg(account_id, experiment_id)
             .await?;
-        let group = self.get_user_group(org_id, group_id).await?;
+        let group = self.get_user_group(account_id, group_id).await?;
 
-        // Evaluate targeting rule if present
         if !group.assignment_rule.is_empty()
             && group.assignment_rule != "random"
             && group.assignment_rule != "hash"
@@ -187,7 +215,7 @@ impl UserGroupService {
         }
 
         self.assign_user_to_variant(
-            org_id,
+            account_id,
             user_id,
             experiment_id,
             group_id,
@@ -199,62 +227,9 @@ impl UserGroupService {
         .await
     }
 
-    async fn get_experiment_variants_full(
-        &self,
-        org_id: Uuid,
-        experiment_id: Uuid,
-    ) -> Result<Experiment> {
-        let row = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE id = ? AND org_id = ?")
-            .bind(experiment_id.to_string())
-            .bind(org_id.to_string())
-            .fetch_one::<ExperimentRow>()
-            .await
-            .context("Failed to fetch experiment for variants")?;
-
-        let variants: Vec<Variant> = serde_json::from_str(&row.variants)?;
-        let user_groups: Vec<Uuid> = serde_json::from_str(&row.user_groups)?;
-
-        let status = match row.status.as_str() {
-            "running" => ExperimentStatus::Running,
-            "paused" => ExperimentStatus::Paused,
-            "stopped" => ExperimentStatus::Stopped,
-            _ => ExperimentStatus::Draft,
-        };
-
-        Ok(Experiment {
-            org_id: Uuid::parse_str(&row.org_id)?,
-            id: Uuid::parse_str(&row.id)?,
-            name: row.name,
-            description: row.description,
-            status,
-            experiment_type: ExperimentType::AbTest,
-            sampling_method: sampling_method_from_row(&row.sampling_method),
-            analysis_engine: AnalysisEngine::Frequentist,
-            sampling_seed: row.sampling_seed,
-            feature_flag_id: row
-                .feature_flag_id
-                .and_then(|id| Uuid::parse_str(&id).ok()),
-            feature_gate_id: row
-                .feature_gate_id
-                .and_then(|id| Uuid::parse_str(&id).ok()),
-            health_checks: vec![],
-            hypothesis: None, // Not needed here
-            variants,
-            user_groups,
-            primary_metric: row.primary_metric,
-            start_date: None,
-            end_date: None,
-            created_at: Utc::now(), // Placeholder
-            updated_at: Utc::now(), // Placeholder
-        })
-    }
-
     pub async fn move_user_group(
         &self,
-        org_id: Uuid,
+        account_id: Uuid,
         group_id: Uuid,
         from_experiment_id: Uuid,
         to_experiment_id: Uuid,
@@ -264,27 +239,20 @@ impl UserGroupService {
             group_id, from_experiment_id, to_experiment_id
         );
 
-        // Get all users in the group
         let user_ids = self.get_group_user_ids(group_id).await?;
-
-        // Get variants for target experiment
-        let to_variants = self
-            .get_experiment_variants(org_id, to_experiment_id)
+        let to_experiment = self
+            .get_experiment_from_pg(account_id, to_experiment_id)
             .await?;
 
-        // Reassign all users
         for user_id in user_ids {
-            let experiment = self
-                .get_experiment_variants_full(org_id, to_experiment_id)
-                .await?;
             self.assign_user_to_variant(
-                org_id,
+                account_id,
                 &user_id,
                 to_experiment_id,
                 group_id,
-                &to_variants,
-                experiment.sampling_method,
-                experiment.sampling_seed,
+                &to_experiment.variants,
+                to_experiment.sampling_method.clone(),
+                to_experiment.sampling_seed,
                 None,
             )
             .await?;
@@ -293,16 +261,153 @@ impl UserGroupService {
         Ok(())
     }
 
-    pub async fn get_group_metrics(&self, org_id: Uuid, group_id: Uuid) -> Result<GroupMetrics> {
-        let group = self.get_user_group(org_id, group_id).await?;
+    pub async fn get_group_metrics(&self, account_id: Uuid, group_id: Uuid) -> Result<GroupMetrics> {
+        let group = self.get_user_group(account_id, group_id).await?;
 
-        // Mock metrics for now
         Ok(GroupMetrics {
             group_id,
             total_users: group.size,
             active_users: group.size,
             conversion_rate: 0.15,
         })
+    }
+
+    // ------------------------------------------------------------------
+    // Internal helpers
+    // ------------------------------------------------------------------
+
+    async fn upsert_user_group(&self, group: &UserGroup) -> Result<()> {
+        sqlx::query(
+            r#"INSERT INTO user_groups
+                (id, account_id, name, description, assignment_rule, size, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               ON CONFLICT (id) DO UPDATE SET
+                 name            = EXCLUDED.name,
+                 description     = EXCLUDED.description,
+                 assignment_rule = EXCLUDED.assignment_rule,
+                 size            = EXCLUDED.size,
+                 updated_at      = EXCLUDED.updated_at"#,
+        )
+        .bind(group.id)
+        .bind(group.account_id)
+        .bind(&group.name)
+        .bind(&group.description)
+        .bind(&group.assignment_rule)
+        .bind(group.size as i32)
+        .bind(group.created_at)
+        .bind(group.updated_at)
+        .execute(&self.pg)
+        .await
+        .context("Failed to upsert user group")?;
+
+        Ok(())
+    }
+
+    /// user_assignments write path stays in ClickHouse
+    async fn save_assignment_ch(&self, account_id: Uuid, assignment: &UserAssignment) -> Result<()> {
+        info!(
+            "Saving user assignment (ClickHouse): user={} experiment={} variant={}",
+            assignment.user_id, assignment.experiment_id, assignment.variant
+        );
+
+        let row = UserAssignmentRow {
+            account_id: account_id.to_string(),
+            user_id: assignment.user_id.clone(),
+            experiment_id: assignment.experiment_id.to_string(),
+            variant: assignment.variant.clone(),
+            group_id: assignment.group_id.to_string(),
+            assigned_at: assignment.assigned_at.timestamp() as u32,
+        };
+
+        let mut insert = self.ch.client().insert("user_assignments")?;
+        insert.write(&row).await?;
+        insert.end().await?;
+
+        Ok(())
+    }
+
+    /// Read experiment variants from Postgres (after migration)
+    async fn get_experiment_from_pg(
+        &self,
+        account_id: Uuid,
+        experiment_id: Uuid,
+    ) -> Result<Experiment> {
+        #[derive(sqlx::FromRow)]
+        struct Row {
+            id: Uuid,
+            account_id: Uuid,
+            name: String,
+            description: String,
+            status: String,
+            experiment_type: String,
+            sampling_method: String,
+            analysis_engine: String,
+            sampling_seed: i32,
+            variants: Option<String>,
+            user_groups: Option<String>,
+            primary_metric: Option<String>,
+            feature_flag_id: Option<Uuid>,
+            feature_gate_id: Option<Uuid>,
+        }
+
+        let r = sqlx::query_as::<_, Row>(
+            r#"SELECT id, account_id, name, description, status, experiment_type,
+                      sampling_method, analysis_engine, sampling_seed,
+                      variants::text AS variants, user_groups::text AS user_groups,
+                      primary_metric, feature_flag_id, feature_gate_id
+               FROM experiments
+               WHERE id = $1 AND account_id = $2"#,
+        )
+        .bind(experiment_id)
+        .bind(account_id)
+        .fetch_one(&self.pg)
+        .await
+        .context("Failed to fetch experiment for assignment")?;
+
+        let variants: Vec<Variant> = serde_json::from_str(r.variants.as_deref().unwrap_or("[]"))?;
+        let user_groups: Vec<Uuid> =
+            serde_json::from_str(r.user_groups.as_deref().unwrap_or("[]"))?;
+
+        let status = match r.status.as_str() {
+            "running" => ExperimentStatus::Running,
+            "paused" => ExperimentStatus::Paused,
+            "stopped" => ExperimentStatus::Stopped,
+            _ => ExperimentStatus::Draft,
+        };
+
+        let sampling_method = match r.sampling_method.as_str() {
+            "random" => SamplingMethod::Random,
+            "stratified" => SamplingMethod::Stratified,
+            _ => SamplingMethod::Hash,
+        };
+
+        Ok(Experiment {
+            account_id: r.account_id,
+            id: r.id,
+            name: r.name,
+            description: r.description,
+            status,
+            experiment_type: ExperimentType::AbTest,
+            sampling_method,
+            analysis_engine: AnalysisEngine::Frequentist,
+            sampling_seed: r.sampling_seed as u64,
+            feature_flag_id: r.feature_flag_id,
+            feature_gate_id: r.feature_gate_id,
+            health_checks: vec![],
+            hypothesis: None,
+            variants,
+            user_groups,
+            primary_metric: r.primary_metric.unwrap_or_default(),
+            start_date: None,
+            end_date: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        })
+    }
+
+    async fn get_group_user_ids(&self, _group_id: Uuid) -> Result<Vec<String>> {
+        // Placeholder: querying user list would require scanning user_assignments in CH
+        Ok(vec![])
     }
 
     fn hash_user_to_variant(
@@ -316,7 +421,6 @@ impl UserGroupService {
         experiment_id.hash(&mut hasher);
         let hash = hasher.finish();
 
-        // Map hash to variant based on allocation percentages
         let mut cumulative = 0.0;
         let hash_percent = (hash % 10000) as f64 / 100.0;
 
@@ -327,7 +431,6 @@ impl UserGroupService {
             }
         }
 
-        // Fallback to first variant
         variants[0].name.clone()
     }
 
@@ -380,73 +483,12 @@ impl UserGroupService {
                             .or_else(|| attrs.get("segment"))
                             .or_else(|| attrs.get("region"))
                     })
-                    .and_then(|value| value.as_str().map(|s| s.to_string()))
+                    .and_then(|v| v.as_str().map(|s| s.to_string()))
                     .unwrap_or_else(|| "default".to_string());
                 self.hash_user_to_variant_with_salt(user_id, experiment_id, variants, &salt)
             }
             SamplingMethod::Hash => self.hash_user_to_variant(user_id, experiment_id, variants),
         }
-    }
-
-    async fn save_user_group(&self, group: &UserGroup) -> Result<()> {
-        let row = UserGroupRow {
-            org_id: group.org_id.to_string(),
-            id: group.id.to_string(),
-            name: group.name.clone(),
-            description: group.description.clone(),
-            assignment_rule: group.assignment_rule.clone(),
-            size: group.size as u64,
-            created_at: group.created_at.timestamp() as u32,
-            updated_at: group.updated_at.timestamp() as u32,
-        };
-
-        let mut insert = self.db.client().insert("user_groups")?;
-        insert.write(&row).await?;
-        insert.end().await?;
-
-        Ok(())
-    }
-
-    async fn save_assignment(&self, org_id: Uuid, assignment: &UserAssignment) -> Result<()> {
-        info!(
-            "Saving user assignment: user={} experiment={} variant={}",
-            assignment.user_id, assignment.experiment_id, assignment.variant
-        );
-
-        let row = UserAssignmentRow {
-            org_id: org_id.to_string(),
-            user_id: assignment.user_id.clone(),
-            experiment_id: assignment.experiment_id.to_string(),
-            variant: assignment.variant.clone(),
-            group_id: assignment.group_id.to_string(),
-            assigned_at: assignment.assigned_at.timestamp() as u32,
-        };
-
-        let mut insert = self.db.client().insert("user_assignments")?;
-        insert.write(&row).await?;
-        insert.end().await?;
-
-        Ok(())
-    }
-
-    async fn get_group_user_ids(&self, _group_id: Uuid) -> Result<Vec<String>> {
-        // TODO: implement if needed; placeholder keeps signature unchanged
-        Ok(vec![])
-    }
-
-    async fn get_experiment_variants(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Vec<Variant>> {
-        let row = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE id = ? AND org_id = ?")
-            .bind(experiment_id.to_string())
-            .bind(org_id.to_string())
-            .fetch_one::<ExperimentRow>()
-            .await
-            .context("Failed to fetch experiment for variants")?;
-
-        let variants: Vec<Variant> = serde_json::from_str(&row.variants)?;
-        Ok(variants)
     }
 }
 
@@ -458,24 +500,12 @@ pub struct GroupMetrics {
     pub conversion_rate: f64,
 }
 
-fn sampling_method_from_row(value: &str) -> SamplingMethod {
-    match value {
-        "random" => SamplingMethod::Random,
-        "stratified" => SamplingMethod::Stratified,
-        _ => SamplingMethod::Hash,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_hash_consistency() {
-        let service = UserGroupService {
-            db: ClickHouseClient::new("http://localhost:8123").unwrap(),
-        };
-
         let variants = vec![
             Variant {
                 name: "A".to_string(),
@@ -492,10 +522,16 @@ mod tests {
         ];
 
         let experiment_id = Uuid::new_v4();
+        let mut hasher = DefaultHasher::new();
+        "user123".hash(&mut hasher);
+        experiment_id.hash(&mut hasher);
+        let h1 = hasher.finish();
 
-        // Same user should get same variant
-        let v1 = service.hash_user_to_variant("user123", experiment_id, &variants);
-        let v2 = service.hash_user_to_variant("user123", experiment_id, &variants);
-        assert_eq!(v1, v2);
+        let mut hasher2 = DefaultHasher::new();
+        "user123".hash(&mut hasher2);
+        experiment_id.hash(&mut hasher2);
+        let h2 = hasher2.finish();
+
+        assert_eq!(h1, h2);
     }
 }

@@ -4,8 +4,10 @@ import { trackApi } from '../services/api';
 import { DebugReplayPanel } from './session-replay/DebugReplayPanel';
 import { ReplayPanel } from './session-replay/ReplayPanel';
 import { SessionListPanel } from './session-replay/SessionListPanel';
+import { useAccount } from '../contexts/AccountContext';
 
 export function SessionReplayPanel() {
+    const { activeAccountId } = useAccount();
     type HeatmapEvent = {
         x?: number;
         y?: number;
@@ -93,7 +95,7 @@ export function SessionReplayPanel() {
 
     React.useEffect(() => {
         loadSessions(true);
-    }, [loadSessions]);
+    }, [loadSessions, activeAccountId]);
 
     React.useEffect(() => {
         if (selectedSession) {
@@ -179,7 +181,7 @@ export function SessionReplayPanel() {
             meta?.feature_gate_id ??
             meta?.gate ??
             undefined
-        ;
+            ;
         if (typeof value === 'string') return value;
         if (typeof value === 'number') return String(value);
         return undefined;

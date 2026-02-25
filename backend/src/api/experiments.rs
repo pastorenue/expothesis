@@ -1,14 +1,14 @@
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use actix_web::HttpMessage;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use uuid::Uuid;
 
-use crate::models::*;
 use crate::middleware::auth::AuthedUser;
+use crate::models::*;
 use crate::services::{CupedService, ExperimentService};
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/api/experiments")
+        web::scope("/experiments")
             .route("", web::post().to(create_experiment))
             .route("", web::get().to(list_experiments))
             .route("/{id}", web::get().to(get_experiment))
@@ -33,7 +33,10 @@ async fn create_experiment(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.create_experiment(req.into_inner(), user.org_id).await {
+    match service
+        .create_experiment(req.into_inner(), user.account_id)
+        .await
+    {
         Ok(experiment) => HttpResponse::Created().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -41,11 +44,14 @@ async fn create_experiment(
     }
 }
 
-async fn list_experiments(service: web::Data<ExperimentService>, http: HttpRequest) -> impl Responder {
+async fn list_experiments(
+    service: web::Data<ExperimentService>,
+    http: HttpRequest,
+) -> impl Responder {
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.list_experiments(user.org_id).await {
+    match service.list_experiments(user.account_id).await {
         Ok(experiments) => HttpResponse::Ok().json(experiments),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
@@ -61,7 +67,10 @@ async fn get_experiment(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.get_experiment(user.org_id, id.into_inner()).await {
+    match service
+        .get_experiment(user.account_id, id.into_inner())
+        .await
+    {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::NotFound().json(serde_json::json!({
             "error": e.to_string()
@@ -77,7 +86,10 @@ async fn start_experiment(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.start_experiment(user.org_id, id.into_inner()).await {
+    match service
+        .start_experiment(user.account_id, id.into_inner())
+        .await
+    {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -93,7 +105,10 @@ async fn pause_experiment(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.pause_experiment(user.org_id, id.into_inner()).await {
+    match service
+        .pause_experiment(user.account_id, id.into_inner())
+        .await
+    {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -109,7 +124,10 @@ async fn stop_experiment(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.stop_experiment(user.org_id, id.into_inner()).await {
+    match service
+        .stop_experiment(user.account_id, id.into_inner())
+        .await
+    {
         Ok(experiment) => HttpResponse::Ok().json(experiment),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -129,7 +147,10 @@ async fn get_analysis(
     };
     let experiment_id = id.into_inner();
 
-    match experiment_service.analyze_experiment(user.org_id, experiment_id).await {
+    match experiment_service
+        .analyze_experiment(user.account_id, experiment_id)
+        .await
+    {
         Ok(mut analysis) => {
             // If CUPED is requested, run the CUPED analysis on top
             if query.use_cuped.unwrap_or(false) {

@@ -1,14 +1,17 @@
 use crate::config::Config;
 use crate::models::{
-    EndSessionRequest, ListSessionsResponse, StartSessionRequest, TrackEventRequest, TrackReplayRequest,
+    EndSessionRequest, ListSessionsResponse, StartSessionRequest, TrackEventRequest,
+    TrackReplayRequest,
 };
 use crate::services::{SdkTokenService, TrackingService};
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use log::error;
+use sqlx::Row;
+use uuid::Uuid;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/api/track")
+        web::scope("/track")
             .app_data(web::JsonConfig::default().limit(10 * 1024 * 1024))
             .route("/session/start", web::post().to(start_session))
             .route("/session/end", web::post().to(end_session))
@@ -209,8 +212,19 @@ async fn verify_tracking_key(
     pool: &sqlx::PgPool,
 ) -> Result<(), HttpResponse> {
     let service = SdkTokenService::new(pool.clone());
+
+    // For tracking, we use the default account for now
+    let account_id = match sqlx::query("SELECT id FROM accounts LIMIT 1")
+        .fetch_one(pool)
+        .await
+    {
+        Ok(row) => row.get::<Uuid, _>("id"),
+        Err(_) => return Ok(()),
+    };
+
     let expected = match service
         .ensure_tokens(
+            account_id,
             config.tracking_api_key.clone(),
             config.feature_flags_api_key.clone(),
         )

@@ -5,6 +5,7 @@ import { experimentApi, featureGateApi } from '../services/api';
 import { LoadingSpinner } from './Common';
 import { ExperimentStatus } from '../types';
 import type { Experiment, FeatureGate } from '../types';
+import { useAccount } from '../contexts/AccountContext';
 
 const tooltipStyles = {
     backgroundColor: 'var(--chart-tooltip-bg)',
@@ -42,15 +43,18 @@ const isActiveInWeek = (experiment: Experiment, weekStart: Date, weekEnd: Date) 
 };
 
 export const HomeOverview: React.FC = () => {
+    const { activeAccountId } = useAccount();
     const [timeframe, setTimeframe] = React.useState<'daily' | 'weekly' | 'monthly'>('weekly');
     const { data: experiments = [], isLoading: experimentsLoading } = useQuery({
-        queryKey: ['experiments'],
+        queryKey: ['experiments', activeAccountId],
         queryFn: async () => (await experimentApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: gates = [], isLoading: gatesLoading } = useQuery({
-        queryKey: ['featureGates'],
+        queryKey: ['featureGates', activeAccountId],
         queryFn: async () => (await featureGateApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const buckets = React.useMemo(() => {

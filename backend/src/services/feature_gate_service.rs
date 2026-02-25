@@ -1,21 +1,39 @@
-use crate::db::ClickHouseClient;
 use crate::models::*;
 use crate::services::targeting::TargetingEngine;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use log::info;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 pub struct FeatureGateService {
-    db: ClickHouseClient,
+    pg: PgPool,
+}
+
+#[derive(sqlx::FromRow)]
+struct FeatureGateRow {
+    id: Uuid,
+    flag_id: Option<Uuid>,
+    name: String,
+    description: String,
+    status: String,
+    rule: String,
+    default_value: bool,
+    pass_value: bool,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl FeatureGateService {
-    pub fn new(db: ClickHouseClient) -> Self {
-        Self { db }
+    pub fn new(pg: PgPool) -> Self {
+        Self { pg }
     }
 
-    pub async fn create_gate(&self, req: CreateFeatureGateRequest) -> Result<FeatureGate> {
+    pub async fn create_gate(
+        &self,
+        req: CreateFeatureGateRequest,
+        account_id: Uuid,
+    ) -> Result<FeatureGate> {
         info!("Creating feature gate: {}", req.name);
 
         let gate = FeatureGate {
@@ -31,54 +49,68 @@ impl FeatureGateService {
             updated_at: Utc::now(),
         };
 
-        self.save_gate(&gate).await?;
+        self.upsert_gate(&gate, account_id).await?;
         Ok(gate)
     }
 
-    pub async fn list_gates(&self, flag_id: Option<Uuid>) -> Result<Vec<FeatureGate>> {
-        let mut query = String::from("SELECT ?fields FROM feature_gates FINAL");
-        if flag_id.is_some() {
-            query.push_str(" WHERE flag_id = ?");
-        }
-        query.push_str(" ORDER BY updated_at DESC");
-
-        let mut request = self.db.client().query(&query);
-        if let Some(flag_id) = flag_id {
-            request = request.bind(flag_id.to_string());
-        }
-
-        let rows = request
-            .fetch_all::<FeatureGateRow>()
+    pub async fn list_gates(
+        &self,
+        account_id: Uuid,
+        flag_id: Option<Uuid>,
+    ) -> Result<Vec<FeatureGate>> {
+        let rows = if let Some(fid) = flag_id {
+            sqlx::query_as::<_, FeatureGateRow>(
+                r#"SELECT id, flag_id, name, description, status, rule,
+                          default_value, pass_value, created_at, updated_at
+                   FROM feature_gates
+                   WHERE account_id = $1 AND flag_id = $2
+                   ORDER BY updated_at DESC"#,
+            )
+            .bind(account_id)
+            .bind(fid)
+            .fetch_all(&self.pg)
             .await
-            .context("Failed to fetch feature gates")?;
+            .context("Failed to fetch feature gates")?
+        } else {
+            sqlx::query_as::<_, FeatureGateRow>(
+                r#"SELECT id, flag_id, name, description, status, rule,
+                          default_value, pass_value, created_at, updated_at
+                   FROM feature_gates
+                   WHERE account_id = $1
+                   ORDER BY updated_at DESC"#,
+            )
+            .bind(account_id)
+            .fetch_all(&self.pg)
+            .await
+            .context("Failed to fetch feature gates")?
+        };
 
-        let mut gates = Vec::new();
-        for row in rows {
-            gates.push(self.row_to_gate(row)?);
-        }
-
-        Ok(gates)
+        rows.into_iter().map(row_to_gate).collect()
     }
 
-    pub async fn get_gate(&self, gate_id: Uuid) -> Result<FeatureGate> {
-        let row = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM feature_gates FINAL WHERE id = ?")
-            .bind(gate_id.to_string())
-            .fetch_one::<FeatureGateRow>()
-            .await
-            .context("Failed to fetch feature gate")?;
+    pub async fn get_gate(&self, account_id: Uuid, gate_id: Uuid) -> Result<FeatureGate> {
+        let r = sqlx::query_as::<_, FeatureGateRow>(
+            r#"SELECT id, flag_id, name, description, status, rule,
+                      default_value, pass_value, created_at, updated_at
+               FROM feature_gates
+               WHERE id = $1 AND account_id = $2"#,
+        )
+        .bind(gate_id)
+        .bind(account_id)
+        .fetch_one(&self.pg)
+        .await
+        .context("Failed to fetch feature gate")?;
 
-        self.row_to_gate(row)
+        row_to_gate(r)
     }
 
     pub async fn evaluate_gate(
         &self,
         gate_id: Uuid,
+        account_id: Uuid,
         req: EvaluateFeatureGateRequest,
     ) -> Result<FeatureGateEvaluationResponse> {
-        let gate = self.get_gate(gate_id).await?;
+        let gate = self.get_gate(account_id, gate_id).await?;
         let attrs = req.attributes.unwrap_or(serde_json::json!({}));
 
         if matches!(gate.status, FeatureGateStatus::Inactive) {
@@ -100,7 +132,11 @@ impl FeatureGateService {
         }
 
         let matches = TargetingEngine::evaluate(&gate.rule, &attrs);
-        let pass = if matches { gate.pass_value } else { gate.default_value };
+        let pass = if matches {
+            gate.pass_value
+        } else {
+            gate.default_value
+        };
 
         Ok(FeatureGateEvaluationResponse {
             gate_id: gate.id,
@@ -114,44 +150,105 @@ impl FeatureGateService {
         })
     }
 
-    async fn save_gate(&self, gate: &FeatureGate) -> Result<()> {
-        let row = FeatureGateRow {
-            id: gate.id.to_string(),
-            flag_id: gate.flag_id.to_string(),
-            name: gate.name.clone(),
-            description: gate.description.clone(),
-            status: format!("{:?}", gate.status).to_lowercase(),
-            rule: gate.rule.clone(),
-            default_value: gate.default_value as u8,
-            pass_value: gate.pass_value as u8,
-            created_at: gate.created_at.timestamp() as u32,
-            updated_at: gate.updated_at.timestamp() as u32,
-        };
+    pub async fn update_gate(
+        &self,
+        account_id: Uuid,
+        gate_id: Uuid,
+        req: UpdateFeatureGateRequest,
+    ) -> Result<FeatureGate> {
+        let mut gate = self.get_gate(account_id, gate_id).await?;
 
-        let mut insert = self.db.client().insert("feature_gates")?;
-        insert.write(&row).await?;
-        insert.end().await?;
+        if let Some(name) = req.name {
+            gate.name = name;
+        }
+        if let Some(description) = req.description {
+            gate.description = description;
+        }
+        if let Some(status) = req.status {
+            gate.status = status;
+        }
+        if let Some(rule) = req.rule {
+            gate.rule = rule;
+        }
+        if let Some(default_value) = req.default_value {
+            gate.default_value = default_value;
+        }
+        if let Some(pass_value) = req.pass_value {
+            gate.pass_value = pass_value;
+        }
+
+        gate.updated_at = Utc::now();
+        self.upsert_gate(&gate, account_id).await?;
+        Ok(gate)
+    }
+
+    pub async fn delete_gate(&self, account_id: Uuid, gate_id: Uuid) -> Result<()> {
+        sqlx::query("DELETE FROM feature_gates WHERE id = $1 AND account_id = $2")
+            .bind(gate_id)
+            .bind(account_id)
+            .execute(&self.pg)
+            .await
+            .context("Failed to delete feature gate")?;
 
         Ok(())
     }
 
-    fn row_to_gate(&self, row: FeatureGateRow) -> Result<FeatureGate> {
-        let status = match row.status.as_str() {
-            "inactive" => FeatureGateStatus::Inactive,
-            _ => FeatureGateStatus::Active,
+    async fn upsert_gate(&self, gate: &FeatureGate, account_id: Uuid) -> Result<()> {
+        let status = format!("{:?}", gate.status).to_lowercase();
+        let flag_id = if gate.flag_id == Uuid::nil() {
+            None
+        } else {
+            Some(gate.flag_id)
         };
 
-        Ok(FeatureGate {
-            id: Uuid::parse_str(&row.id)?,
-            flag_id: Uuid::parse_str(&row.flag_id)?,
-            name: row.name,
-            description: row.description,
-            status,
-            rule: row.rule,
-            default_value: row.default_value > 0,
-            pass_value: row.pass_value > 0,
-            created_at: DateTime::from_timestamp(row.created_at as i64, 0).unwrap_or_default(),
-            updated_at: DateTime::from_timestamp(row.updated_at as i64, 0).unwrap_or_default(),
-        })
+        sqlx::query(
+            r#"INSERT INTO feature_gates
+                (id, account_id, flag_id, name, description, status, rule, default_value, pass_value, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (id) DO UPDATE SET
+                 flag_id       = EXCLUDED.flag_id,
+                 name          = EXCLUDED.name,
+                 description   = EXCLUDED.description,
+                 status        = EXCLUDED.status,
+                 rule          = EXCLUDED.rule,
+                 default_value = EXCLUDED.default_value,
+                 pass_value    = EXCLUDED.pass_value,
+                 updated_at    = EXCLUDED.updated_at"#,
+        )
+        .bind(gate.id)
+        .bind(account_id)
+        .bind(flag_id)
+        .bind(&gate.name)
+        .bind(&gate.description)
+        .bind(status)
+        .bind(&gate.rule)
+        .bind(gate.default_value)
+        .bind(gate.pass_value)
+        .bind(gate.created_at)
+        .bind(gate.updated_at)
+        .execute(&self.pg)
+        .await
+        .context("Failed to upsert feature gate")?;
+
+        Ok(())
     }
+}
+
+fn row_to_gate(r: FeatureGateRow) -> Result<FeatureGate> {
+    Ok(FeatureGate {
+        id: r.id,
+        flag_id: r.flag_id.unwrap_or(Uuid::nil()),
+        name: r.name,
+        description: r.description,
+        status: match r.status.as_str() {
+            "active" => FeatureGateStatus::Active,
+            "paused" => FeatureGateStatus::Paused,
+            _ => FeatureGateStatus::Draft,
+        },
+        rule: r.rule,
+        default_value: r.default_value,
+        pass_value: r.pass_value,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+    })
 }

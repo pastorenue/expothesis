@@ -3,18 +3,14 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::models::{
-    DisableTotpRequest,
-    EnableTotpRequest,
-    LoginRequest,
-    RegisterRequest,
-    VerifyOtpRequest,
+    DisableTotpRequest, EnableTotpRequest, LoginRequest, RegisterRequest, VerifyOtpRequest,
     VerifyTotpRequest,
 };
 use crate::services::AuthService;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/api/auth")
+        web::scope("/auth")
             .route("/register", web::post().to(register))
             .route("/login", web::post().to(login))
             .route("/verify-otp", web::post().to(verify_otp))
@@ -31,9 +27,18 @@ async fn register(
     payload: web::Json<RegisterRequest>,
 ) -> impl Responder {
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
-    match service.register(&payload.email, &payload.password).await {
+    match service
+        .register(
+            &payload.email,
+            &payload.password,
+            payload.invite_token.as_deref(),
+        )
+        .await
+    {
         Ok(result) => HttpResponse::Ok().json(result),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }
 
@@ -45,7 +50,9 @@ async fn login(
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
     match service.login(&payload.email, &payload.password).await {
         Ok(result) => HttpResponse::Ok().json(result),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }
 
@@ -60,7 +67,9 @@ async fn verify_otp(
         .await
     {
         Ok(result) => HttpResponse::Ok().json(result),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }
 
@@ -72,7 +81,9 @@ async fn setup_totp(
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
     match service.enable_totp(payload.user_id).await {
         Ok(result) => HttpResponse::Ok().json(result),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }
 
@@ -84,7 +95,9 @@ async fn verify_totp(
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
     match service.verify_totp(payload.user_id, &payload.code).await {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }
 
@@ -96,7 +109,9 @@ async fn disable_totp(
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
     match service.disable_totp(payload.user_id).await {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({ "status": "ok" })),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }
 
@@ -108,6 +123,8 @@ async fn me(
     let service = AuthService::new(pool.get_ref().clone(), config.get_ref().clone());
     match service.me(id.into_inner()).await {
         Ok(user) => HttpResponse::Ok().json(user),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() })),
+        Err(err) => {
+            HttpResponse::BadRequest().json(serde_json::json!({ "error": err.to_string() }))
+        }
     }
 }

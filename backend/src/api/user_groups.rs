@@ -1,14 +1,14 @@
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
 use actix_web::HttpMessage;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use uuid::Uuid;
 
-use crate::models::*;
 use crate::middleware::auth::AuthedUser;
+use crate::models::*;
 use crate::services::UserGroupService;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
-        web::scope("/api/user-groups")
+        web::scope("/user-groups")
             .route("", web::post().to(create_user_group))
             .route("", web::get().to(list_user_groups))
             .route("/{id}", web::get().to(get_user_group))
@@ -32,7 +32,10 @@ async fn create_user_group(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.create_user_group(req.into_inner(), user.org_id).await {
+    match service
+        .create_user_group(req.into_inner(), user.account_id)
+        .await
+    {
         Ok(group) => HttpResponse::Created().json(group),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
             "error": e.to_string()
@@ -40,11 +43,14 @@ async fn create_user_group(
     }
 }
 
-async fn list_user_groups(service: web::Data<UserGroupService>, http: HttpRequest) -> impl Responder {
+async fn list_user_groups(
+    service: web::Data<UserGroupService>,
+    http: HttpRequest,
+) -> impl Responder {
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.list_user_groups(user.org_id).await {
+    match service.list_user_groups(user.account_id).await {
         Ok(groups) => HttpResponse::Ok().json(groups),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
@@ -60,7 +66,10 @@ async fn get_user_group(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.get_user_group(user.org_id, id.into_inner()).await {
+    match service
+        .get_user_group(user.account_id, id.into_inner())
+        .await
+    {
         Ok(group) => HttpResponse::Ok().json(group),
         Err(e) => HttpResponse::NotFound().json(serde_json::json!({
             "error": e.to_string()
@@ -78,7 +87,7 @@ async fn update_user_group(
         return HttpResponse::Unauthorized().finish();
     };
     match service
-        .update_user_group(user.org_id, id.into_inner(), req.into_inner())
+        .update_user_group(user.account_id, id.into_inner(), req.into_inner())
         .await
     {
         Ok(group) => HttpResponse::Ok().json(group),
@@ -96,7 +105,10 @@ async fn delete_user_group(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.delete_user_group(user.org_id, id.into_inner()).await {
+    match service
+        .delete_user_group(user.account_id, id.into_inner())
+        .await
+    {
         Ok(_) => HttpResponse::Ok().json(serde_json::json!({
             "message": "User group deleted"
         })),
@@ -117,7 +129,7 @@ async fn move_user_group(
     };
     match service
         .move_user_group(
-            user.org_id,
+            user.account_id,
             id.into_inner(),
             req.from_experiment_id,
             req.to_experiment_id,
@@ -141,7 +153,10 @@ async fn get_group_metrics(
     let Some(user) = authed(&http) else {
         return HttpResponse::Unauthorized().finish();
     };
-    match service.get_group_metrics(user.org_id, id.into_inner()).await {
+    match service
+        .get_group_metrics(user.account_id, id.into_inner())
+        .await
+    {
         Ok(metrics) => HttpResponse::Ok().json(metrics),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
@@ -160,7 +175,7 @@ async fn assign_user(
     let req = req.into_inner();
     match service
         .assign_user_auto(
-            user.org_id,
+            user.account_id,
             &req.user_id,
             req.experiment_id,
             req.group_id,

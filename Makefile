@@ -1,7 +1,7 @@
 .PHONY: up up-ai down build restart logs status test test-backend test-frontend lint lint-backend lint-frontend typecheck typecheck-backend typecheck-frontend psql chsql psql-shell chsql-shell
 
 up:
-	docker-compose up --build
+	docker-compose up -d --build
 
 up-ai:
 	docker-compose --profile ai up -d --build

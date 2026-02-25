@@ -5,6 +5,7 @@ use uuid::Uuid;
 pub struct RegisterRequest {
     pub email: String,
     pub password: String,
+    pub invite_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

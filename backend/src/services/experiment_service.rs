@@ -4,18 +4,24 @@ use crate::stats;
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use log::info;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 pub struct ExperimentService {
-    db: ClickHouseClient,
+    pg: PgPool,
+    ch: ClickHouseClient,
 }
 
 impl ExperimentService {
-    pub fn new(db: ClickHouseClient) -> Self {
-        Self { db }
+    pub fn new(pg: PgPool, ch: ClickHouseClient) -> Self {
+        Self { pg, ch }
     }
 
-    pub async fn create_experiment(&self, req: CreateExperimentRequest, org_id: Uuid) -> Result<Experiment> {
+    pub async fn create_experiment(
+        &self,
+        req: CreateExperimentRequest,
+        account_id: Uuid,
+    ) -> Result<Experiment> {
         info!("Creating experiment: {}", req.name);
 
         let experiment_type = req.experiment_type.unwrap_or(ExperimentType::AbTest);
@@ -31,33 +37,24 @@ impl ExperimentService {
             ));
         }
 
-        // Validate variants total allocation
         let total_allocation: f64 = req.variants.iter().map(|v| v.allocation_percent).sum();
         if (total_allocation - 100.0).abs() > 0.01 {
             return Err(anyhow!("Variant allocations must sum to 100%"));
         }
 
-        // Ensure one control variant
         let control_count = req.variants.iter().filter(|v| v.is_control).count();
         if control_count != 1 {
             return Err(anyhow!("Exactly one variant must be marked as control"));
         }
 
-        // Calculate required sample size based on hypothesis
         let required_sample = match req.hypothesis.metric_type {
             MetricType::Proportion => stats::sample_size_proportion(
-                0.10, // Default baseline - should be configurable
+                0.10,
                 req.hypothesis.expected_effect_size,
                 req.hypothesis.significance_level,
                 req.hypothesis.power,
             ),
-            MetricType::Continuous => stats::sample_size_continuous(
-                1.0, // Default std dev - should be measured
-                req.hypothesis.expected_effect_size,
-                req.hypothesis.significance_level,
-                req.hypothesis.power,
-            ),
-            MetricType::Count => stats::sample_size_continuous(
+            MetricType::Continuous | MetricType::Count => stats::sample_size_continuous(
                 1.0,
                 req.hypothesis.expected_effect_size,
                 req.hypothesis.significance_level,
@@ -69,7 +66,7 @@ impl ExperimentService {
         hypothesis.minimum_sample_size = Some(required_sample);
 
         let experiment = Experiment {
-            org_id,
+            account_id,
             id: Uuid::new_v4(),
             name: req.name,
             description: req.description,
@@ -91,34 +88,26 @@ impl ExperimentService {
             updated_at: Utc::now(),
         };
 
-        // Save to ClickHouse
-        self.save_experiment(&experiment).await?;
+        self.upsert_experiment(&experiment).await?;
 
         Ok(experiment)
     }
 
-    pub async fn start_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn start_experiment(&self, account_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
         info!("Starting experiment: {}", experiment_id);
 
-        let mut experiment = self.get_experiment(org_id, experiment_id).await.map_err(|e| {
-            log::error!("Failed to get experiment {}: {:?}", experiment_id, e);
-            e
-        })?;
-
-        info!(
-            "Experiment {} current status: {:?}",
-            experiment_id, experiment.status
-        );
+        let mut experiment = self
+            .get_experiment(account_id, experiment_id)
+            .await
+            .map_err(|e| {
+                log::error!("Failed to get experiment {}: {:?}", experiment_id, e);
+                e
+            })?;
 
         if !matches!(
             experiment.status,
             ExperimentStatus::Draft | ExperimentStatus::Paused
         ) {
-            log::warn!(
-                "Invalid status transition for experiment {}: cannot start from {:?}",
-                experiment_id,
-                experiment.status
-            );
             return Err(anyhow!(
                 "Can only start experiments in Draft or Paused status"
             ));
@@ -128,15 +117,19 @@ impl ExperimentService {
         experiment.start_date = Some(Utc::now());
         experiment.updated_at = Utc::now();
 
-        self.save_experiment(&experiment).await?;
+        self.upsert_experiment(&experiment).await?;
 
         Ok(experiment)
     }
 
-    pub async fn pause_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn pause_experiment(
+        &self,
+        account_id: Uuid,
+        experiment_id: Uuid,
+    ) -> Result<Experiment> {
         info!("Pausing experiment: {}", experiment_id);
 
-        let mut experiment = self.get_experiment(org_id, experiment_id).await?;
+        let mut experiment = self.get_experiment(account_id, experiment_id).await?;
 
         if !matches!(experiment.status, ExperimentStatus::Running) {
             return Err(anyhow!("Can only pause running experiments"));
@@ -145,15 +138,19 @@ impl ExperimentService {
         experiment.status = ExperimentStatus::Paused;
         experiment.updated_at = Utc::now();
 
-        self.save_experiment(&experiment).await?;
+        self.upsert_experiment(&experiment).await?;
 
         Ok(experiment)
     }
 
-    pub async fn stop_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
+    pub async fn stop_experiment(
+        &self,
+        account_id: Uuid,
+        experiment_id: Uuid,
+    ) -> Result<Experiment> {
         info!("Stopping experiment: {}", experiment_id);
 
-        let mut experiment = self.get_experiment(org_id, experiment_id).await?;
+        let mut experiment = self.get_experiment(account_id, experiment_id).await?;
 
         if matches!(experiment.status, ExperimentStatus::Stopped) {
             return Err(anyhow!("Experiment already stopped"));
@@ -163,81 +160,78 @@ impl ExperimentService {
         experiment.end_date = Some(Utc::now());
         experiment.updated_at = Utc::now();
 
-        self.save_experiment(&experiment).await?;
+        self.upsert_experiment(&experiment).await?;
 
         Ok(experiment)
     }
 
-    pub async fn get_experiment(&self, org_id: Uuid, experiment_id: Uuid) -> Result<Experiment> {
-        let row = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE id = ? AND org_id = ?")
-            .bind(experiment_id.to_string())
-            .bind(org_id.to_string())
-            .fetch_one::<ExperimentRow>()
-            .await
-            .map_err(|e| {
-                log::error!(
-                    "Database error fetching experiment {}: {:?}",
-                    experiment_id,
-                    e
-                );
-                e
-            })
-            .context("Failed to fetch experiment")?;
+    pub async fn get_experiment(
+        &self,
+        account_id: Uuid,
+        experiment_id: Uuid,
+    ) -> Result<Experiment> {
+        let row = sqlx::query_as::<_, ExperimentRow>(
+            r#"SELECT id, account_id, name, description, status, experiment_type,
+                      sampling_method, analysis_engine, sampling_seed,
+                      feature_flag_id, feature_gate_id, health_checks::text AS health_checks,
+                      hypothesis::text AS hypothesis,
+                      variants::text AS variants, user_groups::text AS user_groups,
+                      primary_metric, start_date, end_date, created_at, updated_at
+               FROM experiments
+               WHERE id = $1 AND account_id = $2"#,
+        )
+        .bind(experiment_id)
+        .bind(account_id)
+        .fetch_one(&self.pg)
+        .await
+        .with_context(|| format!("Failed to fetch experiment {experiment_id}"))?;
 
-        self.row_to_experiment(row)
+        row_to_experiment(row)
     }
 
-    pub async fn list_experiments(&self, org_id: Uuid) -> Result<Vec<Experiment>> {
-        let rows = self
-            .db
-            .client()
-            .query("SELECT ?fields FROM experiments FINAL WHERE org_id = ? ORDER BY updated_at DESC")
-            .bind(org_id.to_string())
-            .fetch_all::<ExperimentRow>()
-            .await
-            .context("Failed to fetch experiments")?;
+    pub async fn list_experiments(&self, account_id: Uuid) -> Result<Vec<Experiment>> {
+        let rows = sqlx::query_as::<_, ExperimentRow>(
+            r#"SELECT id, account_id, name, description, status, experiment_type,
+                      sampling_method, analysis_engine, sampling_seed,
+                      feature_flag_id, feature_gate_id, health_checks::text AS health_checks,
+                      hypothesis::text AS hypothesis,
+                      variants::text AS variants, user_groups::text AS user_groups,
+                      primary_metric, start_date, end_date, created_at, updated_at
+               FROM experiments
+               WHERE account_id = $1
+               ORDER BY updated_at DESC"#,
+        )
+        .bind(account_id)
+        .fetch_all(&self.pg)
+        .await
+        .context("Failed to fetch experiments")?;
 
-        let mut experiments = Vec::new();
-        for row in rows {
-            experiments.push(self.row_to_experiment(row)?);
-        }
-
-        Ok(experiments)
+        rows.into_iter().map(row_to_experiment).collect()
     }
 
     pub async fn analyze_experiment(
         &self,
-        org_id: Uuid,
+        account_id: Uuid,
         experiment_id: Uuid,
     ) -> Result<ExperimentAnalysisResponse> {
         info!("Analyzing experiment: {}", experiment_id);
 
-        let experiment = self.get_experiment(org_id, experiment_id).await?;
-
-        // Get metric data for all variants
-        let variant_data = self
-            .get_variant_metrics(org_id, experiment_id)
-            .await?;
+        let experiment = self.get_experiment(account_id, experiment_id).await?;
+        let variant_data = self.get_variant_metrics(account_id, experiment_id).await?;
 
         let mut results = Vec::new();
         let mut sample_sizes = Vec::new();
 
-        // Find control variant
         let control_variant = experiment
             .variants
             .iter()
             .find(|v| v.is_control)
             .ok_or_else(|| anyhow!("No control variant found"))?;
 
-        // Compare each treatment variant to control
         for variant in experiment.variants.iter().filter(|v| !v.is_control) {
             let control_data = variant_data
                 .get(&control_variant.name)
                 .ok_or_else(|| anyhow!("No data for control variant"))?;
-
             let treatment_data = variant_data
                 .get(&variant.name)
                 .ok_or_else(|| anyhow!("No data for treatment variant"))?;
@@ -246,19 +240,18 @@ impl ExperimentService {
                 MetricType::Proportion => {
                     let engine_result = stats::analyze_proportion(
                         experiment.analysis_engine.clone(),
-                        control_data.successes as usize,
-                        control_data.total as usize,
-                        treatment_data.successes as usize,
-                        treatment_data.total as usize,
+                        control_data.successes,
+                        control_data.total,
+                        treatment_data.successes,
+                        treatment_data.total,
                     )?;
-
                     StatisticalResult {
                         experiment_id,
                         variant_a: control_variant.name.clone(),
                         variant_b: variant.name.clone(),
                         metric_name: experiment.primary_metric.clone(),
-                        sample_size_a: control_data.total as usize,
-                        sample_size_b: treatment_data.total as usize,
+                        sample_size_a: control_data.total,
+                        sample_size_b: treatment_data.total,
                         mean_a: control_data.mean,
                         mean_b: treatment_data.mean,
                         std_dev_a: None,
@@ -279,19 +272,18 @@ impl ExperimentService {
                         experiment.analysis_engine.clone(),
                         control_data.mean,
                         control_data.std_dev,
-                        control_data.total as usize,
+                        control_data.total,
                         treatment_data.mean,
                         treatment_data.std_dev,
-                        treatment_data.total as usize,
+                        treatment_data.total,
                     )?;
-
                     StatisticalResult {
                         experiment_id,
                         variant_a: control_variant.name.clone(),
                         variant_b: variant.name.clone(),
                         metric_name: experiment.primary_metric.clone(),
-                        sample_size_a: control_data.total as usize,
-                        sample_size_b: treatment_data.total as usize,
+                        sample_size_a: control_data.total,
+                        sample_size_b: treatment_data.total,
                         mean_a: control_data.mean,
                         mean_b: treatment_data.mean,
                         std_dev_a: Some(control_data.std_dev),
@@ -310,10 +302,9 @@ impl ExperimentService {
             };
 
             results.push(result);
-
             sample_sizes.push(VariantSampleSize {
                 variant: variant.name.clone(),
-                current_size: treatment_data.total as usize,
+                current_size: treatment_data.total,
                 required_size: experiment
                     .hypothesis
                     .as_ref()
@@ -334,117 +325,138 @@ impl ExperimentService {
         })
     }
 
-    async fn save_experiment(&self, experiment: &Experiment) -> Result<()> {
-        let variants_json = serde_json::to_string(&experiment.variants)?;
-        let user_groups_json = serde_json::to_string(&experiment.user_groups)?;
-        let h = experiment.hypothesis.clone().unwrap_or(Hypothesis {
-            null_hypothesis: "".to_string(),
-            alternative_hypothesis: "".to_string(),
-            expected_effect_size: 0.0,
-            metric_type: MetricType::Proportion,
-            significance_level: 0.05,
-            power: 0.8,
-            minimum_sample_size: None,
-        });
+    async fn upsert_experiment(&self, experiment: &Experiment) -> Result<()> {
+        let variants_json = serde_json::to_value(&experiment.variants)?;
+        let user_groups_json = serde_json::to_value(&experiment.user_groups)?;
+        let health_checks_json = serde_json::to_value(&experiment.health_checks)?;
+        let hypothesis_json = experiment
+            .hypothesis
+            .as_ref()
+            .map(|h| serde_json::to_value(h))
+            .transpose()?;
 
-        let row = ExperimentRow {
-            org_id: experiment.org_id.to_string(),
-            id: experiment.id.to_string(),
-            name: experiment.name.clone(),
-            description: experiment.description.clone(),
-            status: format!("{:?}", experiment.status).to_lowercase(),
-            experiment_type: format!("{:?}", experiment.experiment_type).to_lowercase(),
-            sampling_method: format!("{:?}", experiment.sampling_method).to_lowercase(),
-            analysis_engine: format!("{:?}", experiment.analysis_engine).to_lowercase(),
-            sampling_seed: experiment.sampling_seed,
-            feature_flag_id: experiment.feature_flag_id.map(|id| id.to_string()),
-            feature_gate_id: experiment.feature_gate_id.map(|id| id.to_string()),
-            health_checks: serde_json::to_string(&experiment.health_checks)?,
-            hypothesis_null: h.null_hypothesis,
-            hypothesis_alternative: h.alternative_hypothesis,
-            expected_effect_size: h.expected_effect_size,
-            metric_type: format!("{:?}", h.metric_type).to_lowercase(),
-            significance_level: h.significance_level,
-            power: h.power,
-            minimum_sample_size: h.minimum_sample_size.map(|n| n as u64),
-            primary_metric: experiment.primary_metric.clone(),
-            variants: variants_json,
-            user_groups: user_groups_json,
-            start_date: experiment.start_date.map(|dt| dt.timestamp() as u32),
-            end_date: experiment.end_date.map(|dt| dt.timestamp() as u32),
-            created_at: experiment.created_at.timestamp() as u32,
-            updated_at: experiment.updated_at.timestamp() as u32,
-        };
+        let status = format!("{:?}", experiment.status).to_lowercase();
+        let experiment_type = format!("{:?}", experiment.experiment_type).to_lowercase();
+        let sampling_method = format!("{:?}", experiment.sampling_method).to_lowercase();
+        let analysis_engine = format!("{:?}", experiment.analysis_engine).to_lowercase();
 
-        let mut insert = self.db.client().insert("experiments")?;
-        insert.write(&row).await?;
-        insert.end().await?;
+        sqlx::query(
+            r#"INSERT INTO experiments
+                (id, account_id, name, description, status, experiment_type,
+                 sampling_method, analysis_engine, sampling_seed,
+                 feature_flag_id, feature_gate_id, health_checks, hypothesis,
+                 variants, user_groups, primary_metric,
+                 start_date, end_date, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                       $12, $13, $14, $15, $16, $17, $18, $19, $20)
+               ON CONFLICT (id) DO UPDATE SET
+                 name            = EXCLUDED.name,
+                 description     = EXCLUDED.description,
+                 status          = EXCLUDED.status,
+                 experiment_type = EXCLUDED.experiment_type,
+                 sampling_method = EXCLUDED.sampling_method,
+                 analysis_engine = EXCLUDED.analysis_engine,
+                 sampling_seed   = EXCLUDED.sampling_seed,
+                 feature_flag_id = EXCLUDED.feature_flag_id,
+                 feature_gate_id = EXCLUDED.feature_gate_id,
+                 health_checks   = EXCLUDED.health_checks,
+                 hypothesis      = EXCLUDED.hypothesis,
+                 variants        = EXCLUDED.variants,
+                 user_groups     = EXCLUDED.user_groups,
+                 primary_metric  = EXCLUDED.primary_metric,
+                 start_date      = EXCLUDED.start_date,
+                 end_date        = EXCLUDED.end_date,
+                 updated_at      = EXCLUDED.updated_at"#,
+        )
+        .bind(experiment.id)
+        .bind(experiment.account_id)
+        .bind(&experiment.name)
+        .bind(&experiment.description)
+        .bind(status)
+        .bind(experiment_type)
+        .bind(sampling_method)
+        .bind(analysis_engine)
+        .bind(experiment.sampling_seed as i64)
+        .bind(experiment.feature_flag_id)
+        .bind(experiment.feature_gate_id)
+        .bind(health_checks_json)
+        .bind(hypothesis_json)
+        .bind(variants_json)
+        .bind(user_groups_json)
+        .bind(&experiment.primary_metric)
+        .bind(experiment.start_date)
+        .bind(experiment.end_date)
+        .bind(experiment.created_at)
+        .bind(experiment.updated_at)
+        .execute(&self.pg)
+        .await
+        .context("Failed to upsert experiment")?;
 
         Ok(())
     }
 
+    /// Fetch variant metrics from ClickHouse (user_assignments + metric_events stay in CH)
     async fn get_variant_metrics(
         &self,
-        org_id: Uuid,
+        account_id: Uuid,
         experiment_id: Uuid,
     ) -> Result<std::collections::HashMap<String, VariantMetrics>> {
         info!(
             "Fetching real-time metrics for experiment: {}",
             experiment_id
         );
-        // 1. Get total assignments per variant from user_assignments
-        let assignments_query = "
-            SELECT
-                variant,
-                toUInt64(uniq(user_id)) as total,
-                toUInt64(0) as successes,
-                toFloat64(0.0) as mean,
-                toFloat64(0.0) as std_dev
-            FROM user_assignments FINAL
-            WHERE experiment_id = ? AND org_id = ?
-            GROUP BY variant
-        ";
+
+        #[derive(Debug, clickhouse::Row, serde::Deserialize)]
+        struct VariantMetricsRow {
+            variant: String,
+            total: u64,
+            successes: u64,
+            mean: f64,
+            std_dev: f64,
+        }
 
         let assignment_rows = self
-            .db
+            .ch
             .client()
-            .query(assignments_query)
+            .query(
+                "SELECT
+                    variant,
+                    toUInt64(uniq(user_id)) as total,
+                    toUInt64(0) as successes,
+                    toFloat64(0.0) as mean,
+                    toFloat64(0.0) as std_dev
+                FROM user_assignments FINAL
+                WHERE experiment_id = ? AND account_id = ?
+                GROUP BY variant",
+            )
             .bind(experiment_id.to_string())
-            .bind(org_id.to_string())
+            .bind(account_id.to_string())
             .fetch_all::<VariantMetricsRow>()
             .await
-            .map_err(|e| {
-                log::error!("ClickHouse assignment query failed: {:?}", e);
-                e
-            })
             .context("Failed to fetch assignment counts from ClickHouse")?;
 
-        // 2. Get event metrics per variant from metric_events
-        let events_query = "
-            SELECT
-                variant,
-                toUInt64(uniq(user_id)) as total,
-                toUInt64(uniqIf(user_id, metric_value > 0)) as successes,
-                toFloat64(avg(metric_value)) as mean,
-                toFloat64(stddevPop(metric_value)) as std_dev
-            FROM metric_events
-            WHERE experiment_id = ? AND org_id = ?
-            GROUP BY variant
-        ";
-
         let event_rows = self
-            .db
+            .ch
             .client()
-            .query(events_query)
+            .query(
+                "SELECT
+                    variant,
+                    toUInt64(uniq(user_id)) as total,
+                    toUInt64(uniqIf(user_id, metric_value > 0)) as successes,
+                    toFloat64(avg(metric_value)) as mean,
+                    toFloat64(stddevPop(metric_value)) as std_dev
+                FROM metric_events
+                WHERE experiment_id = ? AND account_id = ?
+                GROUP BY variant",
+            )
             .bind(experiment_id.to_string())
-            .bind(org_id.to_string())
+            .bind(account_id.to_string())
             .fetch_all::<VariantMetricsRow>()
             .await
             .context("Failed to fetch event metrics from ClickHouse")?;
 
         let mut map = std::collections::HashMap::new();
 
-        // Initialize with assignments for total denominator
         for row in assignment_rows {
             map.insert(
                 row.variant,
@@ -458,7 +470,6 @@ impl ExperimentService {
             );
         }
 
-        // Update with event data for mean, std_dev, and successes
         for row in event_rows {
             let metrics = map.entry(row.variant).or_insert(VariantMetrics {
                 total: 0,
@@ -472,10 +483,10 @@ impl ExperimentService {
             metrics.std_dev = row.std_dev;
         }
 
-        // Add variants with zero data if they are missing from query results
-        let experiment = self.get_experiment(org_id, experiment_id).await?;
+        // Ensure all experiment variants appear in map (even if no data yet)
+        let experiment = self.get_experiment(account_id, experiment_id).await?;
         for variant in experiment.variants {
-            map.entry(variant.name.clone()).or_insert(VariantMetrics {
+            map.entry(variant.name).or_insert(VariantMetrics {
                 total: 0,
                 successes: 0,
                 mean: 0.0,
@@ -487,91 +498,20 @@ impl ExperimentService {
         Ok(map)
     }
 
-    fn row_to_experiment(&self, row: ExperimentRow) -> Result<Experiment> {
-        let variants: Vec<Variant> = serde_json::from_str(&row.variants)?;
-        let user_groups: Vec<Uuid> = serde_json::from_str(&row.user_groups)?;
-        let health_checks: Vec<HealthCheck> =
-            serde_json::from_str(&row.health_checks).unwrap_or_default();
-
-        let status = match row.status.as_str() {
-            "running" => ExperimentStatus::Running,
-            "paused" => ExperimentStatus::Paused,
-            "stopped" => ExperimentStatus::Stopped,
-            _ => ExperimentStatus::Draft,
-        };
-
-        let experiment_type = match row.experiment_type.as_str() {
-            "multivariate" => ExperimentType::Multivariate,
-            "featuregate" => ExperimentType::FeatureGate,
-            "feature_gate" => ExperimentType::FeatureGate,
-            "holdout" => ExperimentType::Holdout,
-            _ => ExperimentType::AbTest,
-        };
-
-        let sampling_method = match row.sampling_method.as_str() {
-            "random" => SamplingMethod::Random,
-            "stratified" => SamplingMethod::Stratified,
-            _ => SamplingMethod::Hash,
-        };
-
-        let analysis_engine = match row.analysis_engine.as_str() {
-            "bayesian" => AnalysisEngine::Bayesian,
-            _ => AnalysisEngine::Frequentist,
-        };
-
-        let metric_type = match row.metric_type.as_str() {
-            "continuous" => MetricType::Continuous,
-            "count" => MetricType::Count,
-            _ => MetricType::Proportion,
-        };
-
-        let hypothesis = Some(Hypothesis {
-            null_hypothesis: row.hypothesis_null,
-            alternative_hypothesis: row.hypothesis_alternative,
-            expected_effect_size: row.expected_effect_size,
-            metric_type,
-            significance_level: row.significance_level,
-            power: row.power,
-            minimum_sample_size: row.minimum_sample_size.map(|n| n as usize),
-        });
-
-        Ok(Experiment {
-            org_id: Uuid::parse_str(&row.org_id).context("Invalid org id")?,
-            id: Uuid::parse_str(&row.id)?,
-            name: row.name,
-            description: row.description,
-            status,
-            experiment_type,
-            sampling_method,
-            analysis_engine,
-            sampling_seed: row.sampling_seed,
-            feature_flag_id: row.feature_flag_id.and_then(|id| Uuid::parse_str(&id).ok()),
-            feature_gate_id: row.feature_gate_id.and_then(|id| Uuid::parse_str(&id).ok()),
-            health_checks,
-            hypothesis,
-            variants,
-            user_groups,
-            primary_metric: row.primary_metric,
-            start_date: row
-                .start_date
-                .and_then(|ts| DateTime::from_timestamp(ts as i64, 0)),
-            end_date: row
-                .end_date
-                .and_then(|ts| DateTime::from_timestamp(ts as i64, 0)),
-            created_at: DateTime::from_timestamp(row.created_at as i64, 0).unwrap_or_default(),
-            updated_at: DateTime::from_timestamp(row.updated_at as i64, 0).unwrap_or_default(),
-        })
-    }
-
     async fn evaluate_health_checks(
         &self,
         experiment: &Experiment,
     ) -> Result<Vec<HealthCheckResult>> {
+        #[derive(Debug, clickhouse::Row, serde::Deserialize)]
+        struct MetricAggregateRow {
+            mean: Option<f64>,
+        }
+
         let mut results = Vec::new();
 
         for check in &experiment.health_checks {
             let row = self
-                .db
+                .ch
                 .client()
                 .query(
                     "SELECT avg(metric_value) as mean
@@ -587,16 +527,15 @@ impl ExperimentService {
             let current_value = row.mean;
             let is_passing = match (check.direction.clone(), current_value) {
                 (_, None) => false,
-                (HealthCheckDirection::AtLeast, Some(value)) => {
-                    check.min.map(|min| value >= min).unwrap_or(false)
+                (HealthCheckDirection::AtLeast, Some(v)) => {
+                    check.min.map(|min| v >= min).unwrap_or(false)
                 }
-                (HealthCheckDirection::AtMost, Some(value)) => {
-                    check.max.map(|max| value <= max).unwrap_or(false)
+                (HealthCheckDirection::AtMost, Some(v)) => {
+                    check.max.map(|max| v <= max).unwrap_or(false)
                 }
-                (HealthCheckDirection::Between, Some(value)) => {
-                    let min_ok = check.min.map(|min| value >= min).unwrap_or(false);
-                    let max_ok = check.max.map(|max| value <= max).unwrap_or(false);
-                    min_ok && max_ok
+                (HealthCheckDirection::Between, Some(v)) => {
+                    check.min.map(|min| v >= min).unwrap_or(false)
+                        && check.max.map(|max| v <= max).unwrap_or(false)
                 }
             };
 
@@ -614,9 +553,93 @@ impl ExperimentService {
     }
 }
 
-#[derive(Debug, clickhouse::Row, serde::Deserialize)]
-struct MetricAggregateRow {
-    mean: Option<f64>,
+// ---------------------------------------------------------------------------
+// Row types (plain structs for sqlx::query_as!)
+// ---------------------------------------------------------------------------
+
+#[derive(sqlx::FromRow)]
+pub struct ExperimentRow {
+    pub id: Uuid,
+    pub account_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+    pub experiment_type: String,
+    pub sampling_method: String,
+    pub analysis_engine: String,
+    pub sampling_seed: i64,
+    pub feature_flag_id: Option<Uuid>,
+    pub feature_gate_id: Option<Uuid>,
+    pub health_checks: Option<String>,
+    pub hypothesis: Option<String>,
+    pub variants: Option<String>,
+    pub user_groups: Option<String>,
+    pub primary_metric: String,
+    pub start_date: Option<DateTime<Utc>>,
+    pub end_date: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+fn row_to_experiment(row: ExperimentRow) -> Result<Experiment> {
+    let variants: Vec<Variant> = serde_json::from_str(row.variants.as_deref().unwrap_or("[]"))?;
+    let user_groups: Vec<Uuid> = serde_json::from_str(row.user_groups.as_deref().unwrap_or("[]"))?;
+    let health_checks: Vec<HealthCheck> =
+        serde_json::from_str(row.health_checks.as_deref().unwrap_or("[]")).unwrap_or_default();
+
+    let status = match row.status.as_str() {
+        "running" => ExperimentStatus::Running,
+        "paused" => ExperimentStatus::Paused,
+        "stopped" => ExperimentStatus::Stopped,
+        _ => ExperimentStatus::Draft,
+    };
+
+    let experiment_type = match row.experiment_type.as_str() {
+        "multivariate" => ExperimentType::Multivariate,
+        "featuregate" | "feature_gate" => ExperimentType::FeatureGate,
+        "holdout" => ExperimentType::Holdout,
+        _ => ExperimentType::AbTest,
+    };
+
+    let sampling_method = match row.sampling_method.as_str() {
+        "random" => SamplingMethod::Random,
+        "stratified" => SamplingMethod::Stratified,
+        _ => SamplingMethod::Hash,
+    };
+
+    let analysis_engine = match row.analysis_engine.as_str() {
+        "bayesian" => AnalysisEngine::Bayesian,
+        _ => AnalysisEngine::Frequentist,
+    };
+
+    let hypothesis: Option<Hypothesis> = row
+        .hypothesis
+        .as_deref()
+        .filter(|s| !s.is_empty() && *s != "null")
+        .and_then(|s| serde_json::from_str(s).ok());
+
+    Ok(Experiment {
+        account_id: row.account_id,
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        status,
+        experiment_type,
+        sampling_method,
+        analysis_engine,
+        sampling_seed: row.sampling_seed as u64,
+        feature_flag_id: row.feature_flag_id,
+        feature_gate_id: row.feature_gate_id,
+        health_checks,
+        hypothesis,
+        variants,
+        user_groups,
+        primary_metric: row.primary_metric,
+        start_date: row.start_date,
+        end_date: row.end_date,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    })
 }
 
 #[derive(Debug)]

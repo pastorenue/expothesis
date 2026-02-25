@@ -30,58 +30,6 @@ impl ClickHouseClient {
             .await
             .context("Failed to create database")?;
 
-        // Experiments table
-        self.client
-            .query(
-                "CREATE TABLE IF NOT EXISTS expothesis.experiments (
-                    org_id String DEFAULT 'default-org',
-                    id String,
-                    name String,
-                    description String,
-                    status String,
-                    experiment_type String,
-                    sampling_method String,
-                    analysis_engine String,
-                    sampling_seed UInt64,
-                    feature_flag_id Nullable(String),
-                    feature_gate_id Nullable(String),
-                    health_checks String,
-                    hypothesis_null String,
-                    hypothesis_alternative String,
-                    expected_effect_size Float64,
-                    metric_type String,
-                    significance_level Float64,
-                    power Float64,
-                    minimum_sample_size Nullable(UInt64),
-                    primary_metric String,
-                    variants String,
-                    user_groups String,
-                    start_date Nullable(DateTime),
-                    end_date Nullable(DateTime),
-                    created_at DateTime,
-                    updated_at DateTime
-                ) ENGINE = ReplacingMergeTree(updated_at)
-                ORDER BY id",
-            )
-            .execute()
-            .await
-            .context("Failed to create experiments table")?;
-
-        let experiment_alters = [
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS org_id String DEFAULT 'default-org'",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS experiment_type String",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS sampling_method String",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS analysis_engine String",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS sampling_seed UInt64",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS feature_flag_id Nullable(String)",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS feature_gate_id Nullable(String)",
-            "ALTER TABLE expothesis.experiments ADD COLUMN IF NOT EXISTS health_checks String",
-        ];
-
-        for alter in experiment_alters {
-            self.client.query(alter).execute().await?;
-        }
-
         // User assignments table
         self.client
             .query(
@@ -99,18 +47,18 @@ impl ClickHouseClient {
             .await
             .context("Failed to create user_assignments table")?;
 
-        // Ensure org_id exists on user_assignments
+        // Ensure account_id exists on user_assignments
         self.client
-            .query("ALTER TABLE expothesis.user_assignments ADD COLUMN IF NOT EXISTS org_id String DEFAULT 'default-org'")
+            .query("ALTER TABLE expothesis.user_assignments ADD COLUMN IF NOT EXISTS account_id String DEFAULT 'default-org'")
             .execute()
             .await
-            .context("Failed to alter user_assignments table (org_id)")?;
+            .context("Failed to alter user_assignments table (account_id)")?;
 
         // Metric events table
         self.client
             .query(
                 "CREATE TABLE IF NOT EXISTS expothesis.metric_events (
-                    org_id String DEFAULT 'default-org',
+                    account_id String DEFAULT 'default-org',
                     event_id String,
                     experiment_id String,
                     user_id String,
@@ -129,7 +77,7 @@ impl ClickHouseClient {
 
         let metric_event_alters = [
             "ALTER TABLE expothesis.metric_events ADD COLUMN IF NOT EXISTS attributes Nullable(String)",
-            "ALTER TABLE expothesis.metric_events ADD COLUMN IF NOT EXISTS org_id String DEFAULT 'default-org'",
+            "ALTER TABLE expothesis.metric_events ADD COLUMN IF NOT EXISTS account_id String DEFAULT 'default-org'",
         ];
 
         for alter in metric_event_alters {
@@ -204,119 +152,9 @@ impl ClickHouseClient {
             .await
             .context("Failed to create replay_events table")?;
 
-        // User groups table
-        self.client
-            .query(
-                "CREATE TABLE IF NOT EXISTS expothesis.user_groups (
-                    org_id String DEFAULT 'default-org',
-                    id String,
-                    name String,
-                    description String,
-                    assignment_rule String,
-                    size UInt64,
-                    created_at DateTime,
-                    updated_at DateTime
-                ) ENGINE = ReplacingMergeTree(updated_at)
-                ORDER BY id",
-            )
-            .execute()
-            .await
-            .context("Failed to create user_groups table")?;
-
-        // Feature flags table
-        self.client
-            .query(
-                "CREATE TABLE IF NOT EXISTS expothesis.feature_flags (
-                    org_id String DEFAULT 'default-org',
-                    id String,
-                    name String,
-                    description String,
-                    status String,
-                    tags String,
-                    environment String,
-                    owner String,
-                    user_groups String,
-                    created_at DateTime,
-                    updated_at DateTime
-                ) ENGINE = ReplacingMergeTree(updated_at)
-                ORDER BY id",
-            )
-            .execute()
-            .await
-            .context("Failed to create feature_flags table")?;
-
-        self.client
-            .query("ALTER TABLE expothesis.feature_flags ADD COLUMN IF NOT EXISTS environment String DEFAULT ''")
-            .execute()
-            .await
-            .context("Failed to alter feature_flags table (environment)")?;
-        self.client
-            .query("ALTER TABLE expothesis.feature_flags ADD COLUMN IF NOT EXISTS owner String DEFAULT ''")
-            .execute()
-            .await
-            .context("Failed to alter feature_flags table (owner)")?;
-        self.client
-            .query("ALTER TABLE expothesis.feature_flags ADD COLUMN IF NOT EXISTS user_groups String DEFAULT '[]'")
-            .execute()
-            .await
-            .context("Failed to alter feature_flags table (user_groups)")?;
-
-        // Feature gates table
-        self.client
-            .query(
-                "CREATE TABLE IF NOT EXISTS expothesis.feature_gates (
-                    org_id String DEFAULT 'default-org',
-                    id String,
-                    flag_id String,
-                    name String,
-                    description String,
-                    status String,
-                    rule String,
-                    default_value UInt8,
-                    pass_value UInt8,
-                    created_at DateTime,
-                    updated_at DateTime
-                ) ENGINE = ReplacingMergeTree(updated_at)
-                ORDER BY id",
-            )
-            .execute()
-            .await
-            .context("Failed to create feature_gates table")?;
-
-        // Analytics alerts table
-        self.client
-            .query(
-                "CREATE TABLE IF NOT EXISTS expothesis.analytics_alerts (
-                    id String,
-                    title String,
-                    severity String,
-                    detail String,
-                    experiment_id Nullable(String),
-                    created_at DateTime
-                ) ENGINE = MergeTree()
-                PARTITION BY toYYYYMM(created_at)
-                ORDER BY (created_at, id)",
-            )
-            .execute()
-            .await
-            .context("Failed to create analytics_alerts table")?;
-
-        // CUPED configs table
-        self.client
-            .query(
-                "CREATE TABLE IF NOT EXISTS expothesis.cuped_configs (
-                    experiment_id String,
-                    covariate_metric String,
-                    lookback_days UInt32,
-                    min_sample_size UInt64,
-                    created_at DateTime,
-                    updated_at DateTime
-                ) ENGINE = ReplacingMergeTree(updated_at)
-                ORDER BY experiment_id",
-            )
-            .execute()
-            .await
-            .context("Failed to create cuped_configs table")?;
+        // Metric events table, user_assignments, sessions, activity_events, replay_events, analytics_alerts
+        // stay in ClickHouse.
+        // Configuration tables (experiments, flags, gates, groups, cuped) moved to Postgres.
 
         info!("Schema initialization complete");
         Ok(())

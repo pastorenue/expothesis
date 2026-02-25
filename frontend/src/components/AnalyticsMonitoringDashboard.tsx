@@ -2,6 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { analyticsApi } from '../services/api';
 import { LoadingSpinner } from './Common';
+import { useAccount } from '../contexts/AccountContext';
 import { AlertFeedPanel } from './analytics-monitoring/AlertFeedPanel';
 import { AnomalyAlertsChart } from './analytics-monitoring/AnomalyAlertsChart';
 import { DashboardHeader } from './analytics-monitoring/DashboardHeader';
@@ -54,12 +55,14 @@ const severityBadge = (severity: string) => {
 };
 
 export const AnalyticsMonitoringDashboard: React.FC = () => {
+    const { activeAccountId } = useAccount();
     const { data, isLoading } = useQuery({
-        queryKey: ['analytics-overview'],
+        queryKey: ['analytics-overview', activeAccountId],
         queryFn: async () => {
             const response = await analyticsApi.getOverview();
             return response.data;
         },
+        enabled: !!activeAccountId,
         refetchInterval: 5000,
     });
 
@@ -138,51 +141,51 @@ export const AnalyticsMonitoringDashboard: React.FC = () => {
         trend?: 'up' | 'down' | 'neutral';
         icon?: React.ReactNode;
     }> = [
-        {
-            title: 'Active Experiments',
-            value: summary ? formatCompact(summary.active_experiments) : '—',
-            subtitle: summary ? `${summary.active_experiments_delta >= 0 ? '+' : ''}${summary.active_experiments_delta} launched today` : '—',
-            trend: trendFor(summary?.active_experiments_delta),
-            icon: (
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 18V6m5 12V9m5 9V7m5 11V11" />
-                </svg>
-            ),
-        },
-        {
-            title: 'Daily Exposures',
-            value: summary ? formatCompact(summary.daily_exposures) : '—',
-            subtitle: summary ? `${summary.exposures_delta_percent >= 0 ? '+' : ''}${summary.exposures_delta_percent.toFixed(1)}% vs prior` : '—',
-            trend: trendFor(summary?.exposures_delta_percent),
-            icon: (
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h5l4 6 6-14 3 4" />
-                </svg>
-            ),
-        },
-        {
-            title: 'Primary Conversion',
-            value: summary ? formatPercent(summary.primary_conversion_rate * 100, 2) : '—',
-            subtitle: summary ? `${formatPp(summary.primary_conversion_delta_pp)} lift` : '—',
-            trend: trendFor(summary?.primary_conversion_delta_pp),
-            icon: (
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
-                </svg>
-            ),
-        },
-        {
-            title: 'Guardrail Breaches',
-            value: summary ? summary.guardrail_breaches.toString() : '—',
-            subtitle: summary ? summary.guardrail_breaches_detail : '—',
-            trend: summary ? (summary.guardrail_breaches === 0 ? 'up' : 'down') : 'neutral',
-            icon: (
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M4.93 4.93 19.07 19.07M7.05 16.95 16.95 7.05" />
-                </svg>
-            ),
-        },
-    ];
+            {
+                title: 'Active Experiments',
+                value: summary ? formatCompact(summary.active_experiments) : '—',
+                subtitle: summary ? `${summary.active_experiments_delta >= 0 ? '+' : ''}${summary.active_experiments_delta} launched today` : '—',
+                trend: trendFor(summary?.active_experiments_delta),
+                icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 18V6m5 12V9m5 9V7m5 11V11" />
+                    </svg>
+                ),
+            },
+            {
+                title: 'Daily Exposures',
+                value: summary ? formatCompact(summary.daily_exposures) : '—',
+                subtitle: summary ? `${summary.exposures_delta_percent >= 0 ? '+' : ''}${summary.exposures_delta_percent.toFixed(1)}% vs prior` : '—',
+                trend: trendFor(summary?.exposures_delta_percent),
+                icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h5l4 6 6-14 3 4" />
+                    </svg>
+                ),
+            },
+            {
+                title: 'Primary Conversion',
+                value: summary ? formatPercent(summary.primary_conversion_rate * 100, 2) : '—',
+                subtitle: summary ? `${formatPp(summary.primary_conversion_delta_pp)} lift` : '—',
+                trend: trendFor(summary?.primary_conversion_delta_pp),
+                icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
+                    </svg>
+                ),
+            },
+            {
+                title: 'Guardrail Breaches',
+                value: summary ? summary.guardrail_breaches.toString() : '—',
+                subtitle: summary ? summary.guardrail_breaches_detail : '—',
+                trend: summary ? (summary.guardrail_breaches === 0 ? 'up' : 'down') : 'neutral',
+                icon: (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M4.93 4.93 19.07 19.07M7.05 16.95 16.95 7.05" />
+                    </svg>
+                ),
+            },
+        ];
 
     return (
         <div className="space-y-6 animate-fade-in">

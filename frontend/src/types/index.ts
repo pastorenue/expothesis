@@ -222,7 +222,7 @@ export interface AiModelsResponse {
     models: string[];
 }
 
-export interface Organization {
+export interface Account {
     id: string;
     name: string;
     created_at: string;
@@ -232,6 +232,7 @@ export interface Organization {
 export interface RegisterRequest {
     email: string;
     password: string;
+    invite_token?: string;
 }
 
 export interface LoginRequest {
@@ -243,6 +244,17 @@ export interface VerifyOtpRequest {
     email: string;
     code: string;
     totp_code?: string;
+}
+
+export interface CreateInviteRequest {
+    email: string;
+    role: string;
+}
+
+export interface InviteDetailsResponse {
+    email: string;
+    account_id: string;
+    account_name: string;
 }
 
 export interface AuthStatusResponse {

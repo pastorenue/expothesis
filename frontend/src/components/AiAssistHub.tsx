@@ -4,8 +4,10 @@ import { aiApi, experimentApi, featureFlagApi, featureGateApi } from '../service
 import { AssistCards } from './ai-assist/AssistCards';
 import { ChatPanel } from './ai-assist/ChatPanel';
 import { TotpPanel } from './ai-assist/TotpPanel';
+import { useAccount } from '../contexts/AccountContext';
 
 export const AiAssistHub: React.FC = () => {
+    const { activeAccountId } = useAccount();
     type Usage = {
         total_tokens?: number;
         prompt_tokens?: number;
@@ -27,18 +29,21 @@ export const AiAssistHub: React.FC = () => {
     const [totpCode, setTotpCode] = React.useState('');
 
     const { data: experiments = [] } = useQuery({
-        queryKey: ['experiments'],
+        queryKey: ['experiments', activeAccountId],
         queryFn: async () => (await experimentApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: flags = [] } = useQuery({
-        queryKey: ['featureFlags'],
+        queryKey: ['featureFlags', activeAccountId],
         queryFn: async () => (await featureFlagApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: gates = [] } = useQuery({
-        queryKey: ['featureGates'],
+        queryKey: ['featureGates', activeAccountId],
         queryFn: async () => (await featureGateApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: modelList } = useQuery({

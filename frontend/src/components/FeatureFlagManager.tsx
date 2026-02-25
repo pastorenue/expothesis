@@ -17,6 +17,7 @@ import {
 } from '../types';
 import { featureFlagApi, featureGateApi, userGroupApi, experimentApi } from '../services/api';
 import { LoadingSpinner } from './Common';
+import { useAccount } from '../contexts/AccountContext';
 
 const emptyFlag: CreateFeatureFlagRequest = {
     name: '',
@@ -39,6 +40,7 @@ const emptyGate: CreateFeatureGateRequest = {
 };
 
 export const FeatureFlagManager: React.FC = () => {
+    const { activeAccountId } = useAccount();
     const queryClient = useQueryClient();
     const [selectedFlag, setSelectedFlag] = useState<FeatureFlag | null>(null);
     const [showFlagForm, setShowFlagForm] = useState(false);
@@ -68,29 +70,33 @@ export const FeatureFlagManager: React.FC = () => {
     const [filterOwner, setFilterOwner] = useState('');
 
     const { data: flags = [], isLoading: flagsLoading } = useQuery({
-        queryKey: ['featureFlags'],
+        queryKey: ['featureFlags', activeAccountId],
         queryFn: async () => (await featureFlagApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: gates = [], isLoading: gatesLoading } = useQuery({
-        queryKey: ['featureGates'],
+        queryKey: ['featureGates', activeAccountId],
         queryFn: async () => (await featureGateApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: userGroups = [] } = useQuery({
-        queryKey: ['userGroups'],
+        queryKey: ['userGroups', activeAccountId],
         queryFn: async () => (await userGroupApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const { data: experiments = [] } = useQuery({
-        queryKey: ['experiments'],
+        queryKey: ['experiments', activeAccountId],
         queryFn: async () => (await experimentApi.list()).data,
+        enabled: !!activeAccountId,
     });
 
     const createFlag = useMutation({
         mutationFn: (data: CreateFeatureFlagRequest) => featureFlagApi.create(data),
         onSuccess: (response) => {
-            queryClient.setQueryData<FeatureFlag[]>(['featureFlags'], (oldData) => {
+            queryClient.setQueryData<FeatureFlag[]>(['featureFlags', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return [response.data, ...existing];
             });
@@ -104,7 +110,7 @@ export const FeatureFlagManager: React.FC = () => {
         mutationFn: ({ id, data }: { id: string; data: Partial<CreateFeatureFlagRequest> }) =>
             featureFlagApi.update(id, data),
         onSuccess: (response) => {
-            queryClient.setQueryData<FeatureFlag[]>(['featureFlags'], (oldData) => {
+            queryClient.setQueryData<FeatureFlag[]>(['featureFlags', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return existing.map((item: FeatureFlag) => (item.id === response.data.id ? response.data : item));
             });
@@ -115,7 +121,7 @@ export const FeatureFlagManager: React.FC = () => {
     const deleteFlag = useMutation({
         mutationFn: (id: string) => featureFlagApi.delete(id),
         onSuccess: (_, id) => {
-            queryClient.setQueryData<FeatureFlag[]>(['featureFlags'], (oldData) => {
+            queryClient.setQueryData<FeatureFlag[]>(['featureFlags', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return existing.filter((item: FeatureFlag) => item.id !== id);
             });
@@ -128,7 +134,7 @@ export const FeatureFlagManager: React.FC = () => {
     const createGate = useMutation({
         mutationFn: (data: CreateFeatureGateRequest) => featureGateApi.create(data),
         onSuccess: (response) => {
-            queryClient.setQueryData<FeatureGate[]>(['featureGates'], (oldData) => {
+            queryClient.setQueryData<FeatureGate[]>(['featureGates', activeAccountId], (oldData) => {
                 const existing = Array.isArray(oldData) ? oldData : [];
                 return [response.data, ...existing];
             });

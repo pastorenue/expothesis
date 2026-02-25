@@ -20,6 +20,7 @@ import { ReviewStep } from './experiment/ReviewStep';
 import { StepIndicator } from './experiment/StepIndicator';
 import { StepNavigation } from './experiment/StepNavigation';
 import { VariantsStep } from './experiment/VariantsStep';
+import { useAccount } from '../contexts/AccountContext';
 
 interface ExperimentCreatorProps {
     onSubmit: (experiment: CreateExperimentRequest) => void;
@@ -27,6 +28,7 @@ interface ExperimentCreatorProps {
 }
 
 export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, onCancel }) => {
+    const { activeAccountId } = useAccount();
     const [step, setStep] = useState(1);
     const [metricInput, setMetricInput] = useState('');
     const [groupInput, setGroupInput] = useState('');
@@ -56,35 +58,39 @@ export const ExperimentCreator: React.FC<ExperimentCreatorProps> = ({ onSubmit, 
     });
 
     const { data: availableGroups = [] } = useQuery({
-        queryKey: ['userGroups'],
+        queryKey: ['userGroups', activeAccountId],
         queryFn: async () => {
             const response = await userGroupApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const { data: featureFlags = [] } = useQuery({
-        queryKey: ['featureFlags'],
+        queryKey: ['featureFlags', activeAccountId],
         queryFn: async () => {
             const response = await featureFlagApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const { data: featureGates = [] } = useQuery({
-        queryKey: ['featureGates'],
+        queryKey: ['featureGates', activeAccountId],
         queryFn: async () => {
             const response = await featureGateApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const { data: experiments = [] } = useQuery({
-        queryKey: ['experiments'],
+        queryKey: ['experiments', activeAccountId],
         queryFn: async () => {
             const response = await experimentApi.list();
             return response.data;
         },
+        enabled: !!activeAccountId,
     });
 
     const metricOptions = React.useMemo(() => {

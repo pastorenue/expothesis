@@ -7,6 +7,14 @@ use crate::config::Config;
 use crate::models::{EvaluateFeatureGateRequest, FeatureFlagStatus, FeatureGateStatus};
 use crate::services::{FeatureFlagService, FeatureGateService, SdkTokenService};
 
+pub fn configure(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("/sdk")
+            .route("/evaluate/flags", web::post().to(evaluate_flags))
+            .route("/evaluate/gate/{gate_id}", web::post().to(evaluate_gate)),
+    );
+}
+
 #[derive(Debug, Deserialize)]
 struct EvaluateFlagsRequest {
     pub user_id: Option<String>,
@@ -29,247 +37,155 @@ struct SdkFlagsResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct SdkTokensResponse {
-    pub tracking_api_key: Option<String>,
-    pub feature_flags_api_key: Option<String>,
+struct SdkErrorResponse {
+    pub error: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct RotateTokensRequest {
-    pub kind: String,
-}
-
-#[derive(Debug, Serialize)]
-struct SdkFlagSummary {
-    pub name: String,
-    pub environment: String,
-    pub status: FeatureFlagStatus,
-    pub tags: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct SdkFlagListResponse {
-    pub flags: Vec<SdkFlagSummary>,
-}
-
-pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(
-        web::scope("/api/sdk")
-            .route("/tokens", web::get().to(tokens))
-            .route("/tokens/rotate", web::post().to(rotate_tokens))
-            .route("/feature-flags", web::get().to(list_flags))
-            .route("/feature-flags/evaluate", web::post().to(evaluate_flags)),
-    );
-}
-
-async fn tokens(pool: web::Data<sqlx::PgPool>, config: web::Data<Config>) -> impl Responder {
-    let service = SdkTokenService::new(pool.get_ref().clone());
-    match service
-        .ensure_tokens(
-            config.tracking_api_key.clone(),
-            config.feature_flags_api_key.clone(),
-        )
-        .await
-    {
-        Ok(tokens) => HttpResponse::Ok().json(SdkTokensResponse {
-            tracking_api_key: Some(tokens.tracking_api_key),
-            feature_flags_api_key: Some(tokens.feature_flags_api_key),
-        }),
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "error": err.to_string()
-        })),
-    }
-}
-
-async fn rotate_tokens(
-    pool: web::Data<sqlx::PgPool>,
-    payload: web::Json<RotateTokensRequest>,
-) -> impl Responder {
-    let service = SdkTokenService::new(pool.get_ref().clone());
-    let kind = payload.kind.to_lowercase();
-    let result = match kind.as_str() {
-        "tracking" => service.rotate_tracking().await,
-        "feature_flags" => service.rotate_feature_flags().await,
-        "all" => service.rotate_all().await,
-        _ => Err(anyhow::anyhow!("Invalid rotation kind")),
-    };
-
-    match result {
-        Ok(tokens) => HttpResponse::Ok().json(SdkTokensResponse {
-            tracking_api_key: Some(tokens.tracking_api_key),
-            feature_flags_api_key: Some(tokens.feature_flags_api_key),
-        }),
-        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({
-            "error": err.to_string()
-        })),
-    }
-}
-
-async fn list_flags(
-    req: HttpRequest,
-    config: web::Data<Config>,
-    pool: web::Data<sqlx::PgPool>,
-    service: web::Data<FeatureFlagService>,
-) -> impl Responder {
-    if let Err(response) = verify_feature_flags_key(&req, &config, &pool).await {
-        return response;
-    }
-
-    match service.list_flags().await {
-        Ok(flags) => {
-            let summaries = flags
-                .into_iter()
-                .filter(|flag| matches!(flag.status, FeatureFlagStatus::Active))
-                .map(|flag| SdkFlagSummary {
-                    name: flag.name,
-                    environment: flag.environment,
-                    status: flag.status,
-                    tags: flag.tags,
-                })
-                .collect::<Vec<_>>();
-            HttpResponse::Ok().json(SdkFlagListResponse { flags: summaries })
-        }
-        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "error": err.to_string()
-        })),
-    }
-}
-
-async fn evaluate_flags(
-    req: HttpRequest,
-    config: web::Data<Config>,
-    pool: web::Data<sqlx::PgPool>,
+pub async fn evaluate_flags(
+    _req: HttpRequest,
+    _config: web::Data<Config>,
+    token_service: web::Data<SdkTokenService>,
     flag_service: web::Data<FeatureFlagService>,
     gate_service: web::Data<FeatureGateService>,
-    payload: web::Json<EvaluateFlagsRequest>,
+    body: web::Json<EvaluateFlagsRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_feature_flags_key(&req, &config, &pool).await {
-        return response;
-    }
+    let auth_header = match _req.headers().get("Authorization") {
+        Some(h) => h.to_str().unwrap_or(""),
+        None => {
+            return HttpResponse::Unauthorized().json(SdkErrorResponse {
+                error: "Missing API key".into(),
+            })
+        }
+    };
 
-    let requested_flags = payload
-        .flags
+    let api_key = auth_header.trim_start_matches("Bearer ").trim();
+    let account_id = match token_service.get_account_id_by_token(api_key).await {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::Unauthorized().json(SdkErrorResponse {
+                error: "Invalid API key".into(),
+            })
+        }
+    };
+
+    let _user_id = body
+        .user_id
         .clone()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|flag| flag.to_lowercase())
-        .collect::<Vec<_>>();
-    let requested_env = payload.environment.clone().unwrap_or_default();
+        .unwrap_or_else(|| "anonymous".to_string());
+    let attributes = body
+        .attributes
+        .clone()
+        .unwrap_or_else(|| serde_json::json!({}));
+    let requested_flags = body.flags.clone();
+    let _requested_env = body
+        .environment
+        .clone()
+        .unwrap_or_else(|| "production".to_string());
 
-    let flags = match flag_service.list_flags().await {
-        Ok(flags) => flags,
-        Err(err) => {
-            return HttpResponse::InternalServerError().json(serde_json::json!({
-                "error": err.to_string()
-            }))
+    let flags = match flag_service.list_flags(account_id).await {
+        Ok(f) => f,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(SdkErrorResponse {
+                error: e.to_string(),
+            })
         }
     };
 
     let mut evaluations = Vec::new();
+
     for flag in flags {
-        if !requested_flags.is_empty()
-            && !requested_flags
-                .iter()
-                .any(|name| name == &flag.name.to_lowercase())
-        {
-            continue;
-        }
-
-        if !requested_env.is_empty() && flag.environment != requested_env {
-            continue;
-        }
-
-        if matches!(flag.status, FeatureFlagStatus::Inactive) {
-            evaluations.push(SdkFlagEvaluation {
-                name: flag.name,
-                enabled: false,
-                gate_id: None,
-                reason: "Flag inactive".to_string(),
-            });
-            continue;
-        }
-
-        let gates = match gate_service.list_gates(Some(flag.id)).await {
-            Ok(gates) => gates,
-            Err(_) => {
-                evaluations.push(SdkFlagEvaluation {
-                    name: flag.name,
-                    enabled: false,
-                    gate_id: None,
-                    reason: "Failed to load gates".to_string(),
-                });
+        if let Some(ref requested) = requested_flags {
+            if !requested.contains(&flag.name) {
                 continue;
             }
-        };
+        }
 
-        let active_gate = gates.into_iter().find(|gate| matches!(gate.status, FeatureGateStatus::Active));
-        if let Some(gate) = active_gate {
-            let request = EvaluateFeatureGateRequest {
-                attributes: payload.attributes.clone(),
-            };
-            match gate_service.evaluate_gate(gate.id, request).await {
-                Ok(result) => {
-                    evaluations.push(SdkFlagEvaluation {
-                        name: flag.name,
-                        enabled: result.pass,
-                        gate_id: Some(gate.id),
-                        reason: result.reason,
-                    });
-                }
-                Err(_) => {
-                    evaluations.push(SdkFlagEvaluation {
-                        name: flag.name,
-                        enabled: false,
-                        gate_id: Some(gate.id),
-                        reason: "Gate evaluation failed".to_string(),
-                    });
-                }
-            }
-        } else {
+        if !matches!(flag.status, FeatureFlagStatus::Active) {
             evaluations.push(SdkFlagEvaluation {
-                name: flag.name,
+                name: flag.name.clone(),
                 enabled: false,
                 gate_id: None,
-                reason: "No active gates".to_string(),
+                reason: "Flag inactive".into(),
             });
+            continue;
         }
+
+        let gates = match gate_service.list_gates(account_id, Some(flag.id)).await {
+            Ok(g) => g,
+            Err(_) => Vec::new(),
+        };
+
+        let mut matched_gate = None;
+        let mut is_enabled = false;
+
+        for gate in gates {
+            if !matches!(gate.status, FeatureGateStatus::Active) {
+                continue;
+            }
+
+            let eval_req = EvaluateFeatureGateRequest {
+                attributes: Some(attributes.clone()),
+            };
+
+            if let Ok(eval) = gate_service.evaluate_gate(account_id, gate.id, eval_req).await {
+                if eval.pass {
+                    is_enabled = true;
+                    matched_gate = Some(gate.id);
+                    break;
+                }
+            }
+        }
+
+        evaluations.push(SdkFlagEvaluation {
+            name: flag.name,
+            enabled: is_enabled,
+            gate_id: matched_gate,
+            reason: if is_enabled {
+                "Gate passed".into()
+            } else {
+                "No gate passed".into()
+            },
+        });
     }
 
     HttpResponse::Ok().json(SdkFlagsResponse { flags: evaluations })
 }
 
-async fn verify_feature_flags_key(
-    req: &HttpRequest,
-    config: &Config,
-    pool: &sqlx::PgPool,
-) -> Result<(), HttpResponse> {
-    let service = SdkTokenService::new(pool.clone());
-    let expected = match service
-        .ensure_tokens(
-            config.tracking_api_key.clone(),
-            config.feature_flags_api_key.clone(),
-        )
-        .await
-    {
-        Ok(tokens) => tokens.feature_flags_api_key,
-        Err(_) => {
-            return Err(HttpResponse::Unauthorized().json(serde_json::json!({
-                "error": "Feature flags SDK key not configured"
-            })))
+pub async fn evaluate_gate(
+    _req: HttpRequest,
+    _config: web::Data<Config>,
+    token_service: web::Data<SdkTokenService>,
+    gate_service: web::Data<FeatureGateService>,
+    path: web::Path<Uuid>,
+    body: web::Json<EvaluateFeatureGateRequest>,
+) -> impl Responder {
+    let gate_id = path.into_inner();
+    let auth_header = match _req.headers().get("Authorization") {
+        Some(h) => h.to_str().unwrap_or(""),
+        None => {
+            return HttpResponse::Unauthorized().json(SdkErrorResponse {
+                error: "Missing API key".into(),
+            })
         }
     };
 
-    let header = req
-        .headers()
-        .get("x-expothesis-key")
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("");
+    let api_key = auth_header.trim_start_matches("Bearer ").trim();
+    let account_id = match token_service.get_account_id_by_token(api_key).await {
+        Ok(id) => id,
+        Err(_) => {
+            return HttpResponse::Unauthorized().json(SdkErrorResponse {
+                error: "Invalid API key".into(),
+            })
+        }
+    };
 
-    if header != expected {
-        return Err(HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "Invalid feature flags SDK key"
-        })));
+    match gate_service
+        .evaluate_gate(account_id, gate_id, body.into_inner())
+        .await
+    {
+        Ok(eval) => HttpResponse::Ok().json(eval),
+        Err(e) => HttpResponse::InternalServerError().json(SdkErrorResponse {
+            error: e.to_string(),
+        }),
     }
-
-    Ok(())
 }
