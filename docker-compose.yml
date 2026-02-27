@@ -14,8 +14,8 @@ services:
       - CLICKHOUSE_URL=http://clickhouse:8123
       - DATABASE_URL=postgres://expothesis:expothesis@postgres:5432/expothesis
       - RUST_LOG=info
-      - TRACKING_API_KEY=expothesis-demo-key
-      - FEATURE_FLAGS_API_KEY=expothesis-flags-key
+      - TRACKING_API_KEY=track_42c7ada0-a530-40cc-a896-1260b9dadf86
+      - FEATURE_FLAGS_API_KEY=flags_2e2713d8-b755-40c9-9763-e45fbefe53ce
       - SESSION_TTL_MINUTES=30
       - LITELLM_BASE_URL=http://litellm:4000/v1
       - LITELLM_API_KEY=${LITELLM_MASTER_KEY}
@@ -48,7 +48,7 @@ services:
     depends_on:
       - backend
     environment:
-      - VITE_TRACKING_KEY=expothesis-demo-key
+      - VITE_TRACKING_KEY=track_42c7ada0-a530-40cc-a896-1260b9dadf86
     networks:
       - expothesis-network
     restart: always

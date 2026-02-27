@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::utils::{authed};
 use crate::config::Config;
 use crate::models::{EvaluateFeatureGateRequest, FeatureFlagStatus, FeatureGateStatus};
 use crate::services::{FeatureFlagService, FeatureGateService, SdkTokenService};
@@ -10,10 +11,68 @@ use crate::services::{FeatureFlagService, FeatureGateService, SdkTokenService};
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/sdk")
+            .route("/tokens", web::get().to(tokens))
+            .route("/tokens/rotate", web::post().to(rotate_tokens))
             .route("/evaluate/flags", web::post().to(evaluate_flags))
             .route("/evaluate/gate/{gate_id}", web::post().to(evaluate_gate)),
     );
 }
+
+async fn tokens(
+    pool: web::Data<sqlx::PgPool>,
+    config: web::Data<Config>,
+    http: HttpRequest,
+) -> impl Responder {
+    let service = SdkTokenService::new(pool.get_ref().clone());
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service
+        .ensure_tokens(
+            user.account_id,
+            config.tracking_api_key.clone(),
+            config.feature_flags_api_key.clone(),
+        )
+        .await
+    {
+        Ok(tokens) => HttpResponse::Ok().json(SdkTokensResponse {
+            tracking_api_key: Some(tokens.tracking_api_key),
+            feature_flags_api_key: Some(tokens.feature_flags_api_key),
+        }),
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": err.to_string()
+        })),
+    }
+}
+
+async fn rotate_tokens(
+    pool: web::Data<sqlx::PgPool>,
+    payload: web::Json<RotateTokensRequest>,
+    http: HttpRequest,
+) -> impl Responder {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    let service = SdkTokenService::new(pool.get_ref().clone());
+    let kind = payload.kind.to_lowercase();
+    let result = match kind.as_str() {
+        "tracking" => service.rotate_tracking(user.account_id).await,
+        "feature_flags" => service.rotate_feature_flags(user.account_id).await,
+        "all" => service.rotate_all(user.account_id).await,
+        _ => Err(anyhow::anyhow!("Invalid rotation kind")),
+    };
+
+    match result {
+        Ok(tokens) => HttpResponse::Ok().json(SdkTokensResponse {
+            tracking_api_key: Some(tokens.tracking_api_key),
+            feature_flags_api_key: Some(tokens.feature_flags_api_key),
+        }),
+        Err(err) => HttpResponse::BadRequest().json(serde_json::json!({
+            "error": err.to_string()
+        })),
+    }
+}
+
 
 #[derive(Debug, Deserialize)]
 struct EvaluateFlagsRequest {
@@ -23,12 +82,23 @@ struct EvaluateFlagsRequest {
     pub environment: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct RotateTokensRequest {
+    pub kind: String,
+}
+
 #[derive(Debug, Serialize)]
 struct SdkFlagEvaluation {
     pub name: String,
     pub enabled: bool,
     pub gate_id: Option<Uuid>,
     pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SdkTokensResponse {
+    pub tracking_api_key: Option<String>,
+    pub feature_flags_api_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]

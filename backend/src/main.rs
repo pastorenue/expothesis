@@ -11,6 +11,7 @@ mod middleware;
 mod models;
 mod services;
 mod stats;
+mod utils;
 
 use config::Config;
 use db::{connect_postgres, ClickHouseClient};

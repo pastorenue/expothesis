@@ -1,10 +1,9 @@
-use actix_web::HttpMessage;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use uuid::Uuid;
 
-use crate::middleware::auth::AuthedUser;
 use crate::models::*;
 use crate::services::{CupedService, ExperimentService};
+use crate::utils::*;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -13,16 +12,13 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("", web::get().to(list_experiments))
             .route("/{id}", web::get().to(get_experiment))
             .route("/{id}/start", web::post().to(start_experiment))
+            .route("/{id}/restart", web::post().to(restart_experiment))
             .route("/{id}/pause", web::post().to(pause_experiment))
             .route("/{id}/stop", web::post().to(stop_experiment))
             .route("/{id}/analysis", web::get().to(get_analysis))
             .route("/{id}/cuped/config", web::get().to(get_cuped_config))
             .route("/{id}/cuped/config", web::post().to(save_cuped_config)),
     );
-}
-
-fn authed(req: &HttpRequest) -> Option<AuthedUser> {
-    req.extensions().get::<AuthedUser>().cloned()
 }
 
 async fn create_experiment(
@@ -88,6 +84,25 @@ async fn start_experiment(
     };
     match service
         .start_experiment(user.account_id, id.into_inner())
+        .await
+    {
+        Ok(experiment) => HttpResponse::Ok().json(experiment),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn restart_experiment(
+    service: web::Data<ExperimentService>,
+    id: web::Path<Uuid>,
+    http: HttpRequest
+) -> impl Responder {
+    let Some(user) = authed(&http) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    match service
+        .restart_experiment(user.account_id, id.into_inner())
         .await
     {
         Ok(experiment) => HttpResponse::Ok().json(experiment),

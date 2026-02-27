@@ -1,7 +1,7 @@
 use crate::db::ClickHouseClient;
 use crate::models::*;
 use crate::stats;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
 use log::info;
 use sqlx::PgPool;
@@ -32,9 +32,10 @@ impl ExperimentService {
         let health_checks = req.health_checks.unwrap_or_default();
 
         if matches!(experiment_type, ExperimentType::FeatureGate) && feature_gate_id.is_none() {
-            return Err(anyhow!(
-                "Feature gate experiments must reference a feature_gate_id"
-            ));
+            bail!("Feature gate experiments must reference a feature_gate_id {:?}", feature_gate_id);
+            // return Err(anyhow!(
+            //     "Feature gate experiments must reference a feature_gate_id"
+            // ));
         }
 
         let total_allocation: f64 = req.variants.iter().map(|v| v.allocation_percent).sum();
@@ -117,6 +118,28 @@ impl ExperimentService {
         experiment.start_date = Some(Utc::now());
         experiment.updated_at = Utc::now();
 
+        self.upsert_experiment(&experiment).await?;
+
+        Ok(experiment)
+    }
+    
+    pub async fn restart_experiment(
+        &self,
+        account_id: Uuid,
+        experiment_id: Uuid,
+    ) -> Result<Experiment> {
+        info!("Restarting experiment: {}", experiment_id);
+        let mut experiment = self.get_experiment(account_id, experiment_id).await?;
+        
+        if !matches!(experiment.status, ExperimentStatus::Stopped) {
+            return Err(
+                anyhow!("Can only restart experiments that have been previously stopped.")
+            );
+        }
+        
+        experiment.status = ExperimentStatus::Running;
+        experiment.updated_at = Utc::now();
+        
         self.upsert_experiment(&experiment).await?;
 
         Ok(experiment)

@@ -1,6 +1,6 @@
 # Expothesis - Real-time A/B Testing Platform
 
-Expothesis is a high-performance, real-time experimentation platform designed for scale. Built with **Rust**, **React**, and **ClickHouse**, it provides sub-second statistical analysis on millions of events.
+Expothesis is a high-performance, real-time experimentation platform designed for scale. Built with **Rust**, **React**, **ClickHouse** and **Postgresql**, it provides sub-second statistical analysis on millions of events.
 
 ![Expothesis Dashboard](https://via.placeholder.com/1000x500?text=Expothesis+Live+Analytics+Dashboard)
 
@@ -17,7 +17,9 @@ Expothesis is a high-performance, real-time experimentation platform designed fo
 
 -   **Backend**: Rust (Actix-web) - Optimized for safety and speed.
 -   **Frontend**: React (Vite, TypeScript, Tailwind) - Rich, responsive UI with live data synchronization.
--   **Database**: ClickHouse - Distributed OLAP database for massive scale analytics.
+-   **Database**:
+  - ClickHouse - Distributed OLAP database for massive scale analytics.
+  - Postgresql - Relational DB for all business logic
 -   **Infrastructure**: Fully containerized with Docker Compose.
 
 ## 🛠️ Quick Start
@@ -33,14 +35,23 @@ Expothesis is a high-performance, real-time experimentation platform designed fo
     ```
 2.  **Start all services**:
     ```bash
-    docker-compose up --build
+    docker-compose up -d --build
     ```
     For AI Assist + LiteLLM:
     ```bash
-    docker-compose --profile ai up --build
+    docker-compose --profile ai up -d --build
     ```
+    Or use the make command:
+    ```bash
+    make up
+    ```
+    For AI Assist + LiteLLM:
+    ```bash
+    make up-ai
+    ```
+    
 3.  **Access the Dashboard**:
-    -   Frontend: [http://localhost:3000](http://localhost:3000)
+    -   Frontend: [http://localhost:3001](http://localhost:3001)
     -   Backend API: [http://localhost:8080](http://localhost:8080)
     -   ClickHouse: [http://localhost:8123](http://localhost:8123)
     -   Postgres: [http://localhost:5432](http://localhost:5432)

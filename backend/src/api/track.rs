@@ -4,9 +4,9 @@ use crate::models::{
     TrackReplayRequest,
 };
 use crate::services::{SdkTokenService, TrackingService};
+use crate::utils::{authed};
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
-use log::error;
-use sqlx::Row;
+use log::{error};
 use uuid::Uuid;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -30,7 +30,10 @@ async fn start_session(
     http_req: HttpRequest,
     payload: web::Json<StartSessionRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     match tracking_service.start_session(payload.into_inner()).await {
@@ -51,7 +54,10 @@ async fn end_session(
     http_req: HttpRequest,
     payload: web::Json<EndSessionRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     match tracking_service.end_session(payload.into_inner()).await {
@@ -72,7 +78,10 @@ async fn track_event(
     http_req: HttpRequest,
     payload: web::Json<TrackEventRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     match tracking_service.track_event(payload.into_inner()).await {
@@ -93,7 +102,10 @@ async fn track_replay(
     http_req: HttpRequest,
     payload: web::Json<TrackReplayRequest>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     match tracking_service.track_replay(payload.into_inner()).await {
@@ -115,7 +127,10 @@ async fn get_replay(
     path: web::Path<String>,
     query: web::Query<ReplayQuery>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     let limit = query.limit.unwrap_or(1200);
@@ -153,7 +168,11 @@ async fn list_sessions(
     http_req: HttpRequest,
     query: web::Query<SessionQuery>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        error!("Unable to authenticate!");
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     let limit = query.limit.unwrap_or(20);
@@ -188,7 +207,11 @@ async fn list_events(
     http_req: HttpRequest,
     query: web::Query<EventsQuery>,
 ) -> impl Responder {
-    if let Err(response) = verify_tracking_key(&http_req, &config, &pool).await {
+    let Some(user) = authed(&http_req) else {
+        error!("No user found in request");
+        return HttpResponse::Unauthorized().finish();
+    };
+    if let Err(response) = verify_tracking_key(&http_req, &config, &pool, user.account_id).await {
         return response;
     }
     let limit = query.limit.unwrap_or(200);
@@ -210,18 +233,9 @@ async fn verify_tracking_key(
     req: &HttpRequest,
     config: &Config,
     pool: &sqlx::PgPool,
+    account_id: Uuid,
 ) -> Result<(), HttpResponse> {
     let service = SdkTokenService::new(pool.clone());
-
-    // For tracking, we use the default account for now
-    let account_id = match sqlx::query("SELECT id FROM accounts LIMIT 1")
-        .fetch_one(pool)
-        .await
-    {
-        Ok(row) => row.get::<Uuid, _>("id"),
-        Err(_) => return Ok(()),
-    };
-
     let expected = match service
         .ensure_tokens(
             account_id,

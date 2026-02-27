@@ -13,8 +13,8 @@ build:
 	docker-compose build
 
 restart:
-	docker-compose down
-	docker-compose --profile ai up -d --build
+	make down
+	make up
 
 logs:
 	docker-compose logs -f --tail=200
